@@ -42,7 +42,7 @@ export default class ContentOSPlugin extends Plugin {
 
     const ribbonIconEl = this.addRibbonIcon(
       "send",
-      "Create LinkedIn Post",
+      "Create LinkedIn post",
       (evt: MouseEvent) => {
         this.logger.debug("Ribbon icon clicked");
         this.createLinkedInPost();

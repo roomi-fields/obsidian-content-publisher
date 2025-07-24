@@ -23,9 +23,7 @@ export class LinkedInPostComposer extends Modal {
 
     const textarea = textareaContainer.createEl("textarea", {
       placeholder: "What do you want to share on LinkedIn?",
-      attr: {
-        style: "width: 100%; min-height: 150px; resize: vertical;"
-      }
+      cls: "contentos-post-textarea"
     });
 
     textarea.value = this.postContent;
@@ -35,9 +33,7 @@ export class LinkedInPostComposer extends Modal {
 
     const charCount = textareaContainer.createEl("div", {
       text: `${this.postContent.length}/3000 characters`,
-      attr: {
-        style: "text-align: right; font-size: 0.9em; color: var(--text-muted);"
-      }
+      cls: "contentos-char-count"
     });
 
     textarea.addEventListener("input", () => {
@@ -45,21 +41,19 @@ export class LinkedInPostComposer extends Modal {
     });
 
     const buttonContainer = contentEl.createDiv({
-      attr: { style: "display: flex; gap: 10px; margin-top: 1rem;" }
+      cls: "contentos-button-container"
     });
 
     buttonContainer.createEl("button", {
       text: "Cancel",
-      attr: { style: "flex: 1;" }
+      cls: "contentos-cancel-button"
     }).addEventListener("click", () => {
       this.close();
     });
 
     const postButton = buttonContainer.createEl("button", {
       text: "Post",
-      attr: {
-        style: "flex: 1; background-color: var(--interactive-accent); color: var(--text-on-accent);"
-      }
+      cls: "contentos-post-button"
     });
 
     this.postButton = postButton;
@@ -69,9 +63,7 @@ export class LinkedInPostComposer extends Modal {
 
     contentEl.createEl("div", {
       text: "Note: You need to configure your LinkedIn access token in the plugin settings first.",
-      attr: {
-        style: "margin-top: 1rem; font-size: 0.9em; color: var(--text-muted);"
-      }
+      cls: "contentos-note-text"
     });
   }
 

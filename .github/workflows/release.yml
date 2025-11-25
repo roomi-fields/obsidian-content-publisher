@@ -1,9 +1,14 @@
 name: Release Obsidian plugin
 
+# Disabled - releases are created manually
+# To re-enable, uncomment the 'on' section below
+# on:
+#   push:
+#     tags:
+#       - "*"
+
 on:
-  push:
-    tags:
-      - "*"
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
   build:

@@ -126,5 +126,9 @@ Thumbs.db
 .obsidian/workspace-mobile.json
 
 # Development files
-
 data.json
+
+# Internal docs (not published)
+docs/studies/
+docs/HANDOVER.md
+docs/obsidian-substack-publisher-spec.md

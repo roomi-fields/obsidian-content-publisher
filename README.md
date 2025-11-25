@@ -1,106 +1,138 @@
+<div align="center">
+
 # Obsidian Substack Publisher
 
-Publish your Obsidian notes directly to Substack as drafts or published posts.
+**Publish your Obsidian notes directly to Substack**
 
-## Features
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
+[![Obsidian](https://img.shields.io/badge/Obsidian-1.0+-purple.svg)](https://obsidian.md/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub](https://img.shields.io/github/stars/roomi-fields/obsidian-substack?style=social)](https://github.com/roomi-fields/obsidian-substack)
 
-- **Automatic Login**: One-click Substack authentication (desktop only)
-- **Draft & Publish**: Save as draft or publish immediately
-- **Multi-Publication Support**: Manage multiple Substack publications
-- **Markdown Conversion**: Automatic conversion to Substack format
-  - Headers, paragraphs, lists (ordered/unordered)
-  - Bold, italic, links, code
-  - Blockquotes, horizontal rules
+[Installation](#installation) • [Setup](#setup) • [Usage](#usage) • [Roadmap](./docs/ROADMAP.md)
 
-## Installation
+</div>
 
-### From Obsidian Community Plugins (Coming Soon)
+---
 
-1. Open Settings → Community plugins
+## ✨ Features
+
+- **🔐 One-Click Login** — Automatic Substack authentication (desktop only)
+- **📝 Draft & Publish** — Save as draft or publish immediately
+- **📚 Multi-Publication** — Manage multiple Substack publications
+- **🔄 Markdown Conversion** — Full conversion to Substack format
+
+### Supported Markdown
+
+| Element | Status |
+|---------|--------|
+| Headers (H1-H6) | ✅ |
+| Bold, Italic, Links | ✅ |
+| Ordered/Unordered Lists | ✅ |
+| Code Blocks | ✅ |
+| Blockquotes | ✅ |
+| Horizontal Rules | ✅ |
+| Images (URLs) | ✅ |
+| Images (Local) | 🔜 v1.1 |
+| Tables | ❌ |
+
+---
+
+## 📦 Installation
+
+### From Community Plugins (Coming Soon)
+
+1. Open **Settings → Community plugins**
 2. Search for "Substack Publisher"
 3. Install and enable
 
 ### Manual Installation
 
-1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/roomi-fields/obsidian-substack/releases)
+1. Download `main.js`, `manifest.json`, `styles.css` from [latest release](https://github.com/roomi-fields/obsidian-substack/releases)
 2. Create folder: `.obsidian/plugins/obsidian-substack/`
-3. Copy the files into this folder
-4. Restart Obsidian and enable the plugin
+3. Copy files into the folder
+4. Restart Obsidian → Enable plugin
 
-## Setup
+---
+
+## 🔧 Setup
 
 ### 1. Login to Substack
 
-**Desktop (Recommended)**:
+<details>
+<summary><strong>Desktop (Recommended)</strong></summary>
+
 1. Open plugin settings
-2. Click "Login" button
-3. Sign in to Substack in the popup window
-4. Cookie is captured automatically
+2. Click **"Login"** button
+3. Sign in to Substack in the popup
+4. Cookie captured automatically ✅
 
-**Mobile/Manual**:
+</details>
+
+<details>
+<summary><strong>Mobile / Manual</strong></summary>
+
 1. Log in to Substack in your browser
-2. Open Developer Tools (F12) → Application → Cookies
-3. Copy the `substack.sid` cookie value
-4. Paste it in plugin settings
+2. Open DevTools (F12) → Application → Cookies
+3. Copy `substack.sid` cookie value
+4. Paste in plugin settings
 
-### 2. Add Your Publication(s)
+</details>
+
+### 2. Add Publications
 
 1. Go to plugin settings
-2. Enter your publication subdomain(s)
-   - Example: if your Substack is `myname.substack.com`, enter `myname`
-   - Multiple publications: separate with commas
+2. Enter publication subdomain(s)
+   - Example: `myname` for `myname.substack.com`
+   - Multiple: `pub1, pub2, pub3`
 
-## Usage
+---
 
-1. Open any Markdown note in Obsidian
-2. Click the "Send" ribbon icon or use command palette: "Publish to Substack"
-3. Review title and subtitle
-4. Choose your publication
-5. Click "Save as Draft" or "Publish"
+## 🚀 Usage
 
-## Supported Markdown
+1. **Open** any Markdown note
+2. **Click** the ribbon icon (📤) or use command palette: `Publish to Substack`
+3. **Review** title and subtitle
+4. **Select** publication
+5. **Choose** "Save as Draft" or "Publish"
 
-| Element | Support |
-|---------|---------|
-| Headers (H1-H6) | ✅ |
-| Bold, Italic | ✅ |
-| Links | ✅ |
-| Ordered lists | ✅ |
-| Unordered lists | ✅ |
-| Blockquotes | ✅ |
-| Code blocks | ✅ |
-| Inline code | ✅ |
-| Horizontal rules | ✅ |
-| Images | ❌ (coming soon) |
-| Tables | ❌ |
+```
+Your Note → Plugin converts → Substack Draft/Post
+```
 
-## Troubleshooting
+---
 
-**"Session expired or invalid"**
-- Re-login via Settings → Login button
-- Or refresh your cookie manually
+## 🔒 Privacy & Security
 
-**"Publication not found"**
-- Verify your publication subdomain is correct
-- Ensure you have write access to the publication
+- ✅ Credentials stored **locally** in your vault
+- ✅ **No telemetry** or data collection
+- ✅ Cookie-based auth (no passwords stored)
+- ✅ Open source — audit the code yourself
 
-**Plugin not working on mobile**
-- Auto-login requires desktop Obsidian
-- Use manual cookie entry on mobile
+---
 
-## Privacy & Security
+## 🐛 Troubleshooting
 
-- Credentials stored locally in your Obsidian vault
-- No data collection or telemetry
-- Cookie-based auth (no passwords stored)
+| Error | Solution |
+|-------|----------|
+| "Session expired" | Re-login via Settings → Login |
+| "Publication not found" | Check subdomain spelling |
+| Plugin not loading | Enable in Community plugins, restart Obsidian |
 
-## Limitations
+---
 
-- Uses unofficial Substack API (may break if Substack changes their API)
-- Image upload not supported (v1)
-- Desktop-only for auto-login feature
+## 📋 Roadmap
 
-## Credits
+See [ROADMAP.md](./docs/ROADMAP.md) for planned features.
+
+**Coming soon:**
+- 🖼️ **v1.1** — Local image upload
+- 🎯 **v1.2** — Audience selector (free/paid)
+- 📑 **v1.3** — Draft management
+
+---
+
+## 🙏 Credits
 
 Built upon these open-source projects:
 
@@ -110,15 +142,26 @@ Built upon these open-source projects:
 
 See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for details.
 
-## License
+---
 
-MIT License - See [LICENSE](LICENSE) for details.
+## 📄 License
 
-## Support
-
-- [Report an issue](https://github.com/roomi-fields/obsidian-substack/issues)
-- [Feature requests](https://github.com/roomi-fields/obsidian-substack/issues/new)
+MIT License — See [LICENSE](LICENSE) for details.
 
 ---
 
-**Disclaimer**: This plugin is not affiliated with or endorsed by Substack. Use at your own risk.
+## 🤝 Contributing
+
+Found a bug? Have an idea? [Open an issue](https://github.com/roomi-fields/obsidian-substack/issues) or submit a PR!
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
+
+<div align="center">
+
+**⚠️ Disclaimer**: This plugin uses unofficial Substack API. Not affiliated with Substack.
+
+⭐ [Star on GitHub](https://github.com/roomi-fields/obsidian-substack) if this helps you!
+
+</div>

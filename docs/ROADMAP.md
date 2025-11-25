@@ -1,101 +1,83 @@
 # Roadmap - Obsidian Substack Publisher
 
-## v1.0.0 (Current) - MVP
-- [x] Authentification par cookie Substack
-- [x] Support multi-publications
-- [x] Conversion Markdown → Substack JSON
+## v1.0.0 ✅ (Current) - MVP
+
+- [x] Automatic Substack login (desktop only)
+- [x] Session cookie capture via Electron BrowserWindow
+- [x] Multi-publication support
+- [x] Markdown → Substack JSON conversion
   - Headers (h1-h6)
-  - Paragraphes avec formatage inline (bold, italic, code, liens)
-  - Listes ordonnées/non-ordonnées
-  - Blocs de code avec langage
+  - Paragraphs with inline formatting (bold, italic, code, links)
+  - Ordered/unordered lists
+  - Code blocks with language
   - Blockquotes
-  - Images (URLs externes)
-  - Règles horizontales
-- [x] Modal de publication avec preview
-- [x] Save as Draft / Publish direct
+  - Images (external URLs)
+  - Horizontal rules
+- [x] Publication modal with preview
+- [x] Save as Draft / Publish directly
+- [x] Clear error messages (session expired, publication not found, etc.)
 
 ---
 
-## v1.1.0 - Images (PRIORITAIRE)
-> **Étude**: [docs/studies/v1.1-images.md](docs/studies/v1.1-images.md)
-> **Estimation**: ~14h
+## v1.1.0 - Image Upload (Priority)
 
-- [ ] Upload d'images locales vers Substack CDN
-- [ ] Support des images embarquées `![alt](path/to/image.png)`
-- [ ] Conversion automatique des chemins locaux → URLs Substack
-- [ ] Gestion des images de couverture (cover image)
-- [ ] Support des formats: PNG, JPG, GIF, WebP
+- [ ] Upload local images to Substack CDN
+- [ ] Support embedded images `![alt](path/to/image.png)`
+- [ ] Auto-convert local paths → Substack URLs
+- [ ] Cover image support
+- [ ] Supported formats: PNG, JPG, GIF, WebP
 
-## v1.2.0 - Améliorations UX
-> **Étude**: [docs/studies/v1.2-ux-improvements.md](docs/studies/v1.2-ux-improvements.md)
-> **Estimation**: ~11h
+## v1.2.0 - UX Improvements
 
-- [ ] Sélecteur d'audience (everyone, only_paid, founding, only_free)
-- [ ] Confirmation avant publication directe
-- [ ] Affichage du lien vers le post après publication
-- [ ] Meilleure gestion des erreurs (cookie expiré, rate limit, etc.)
-- [ ] Notification de succès avec lien cliquable
-- [ ] Progress bar pendant upload
+- [ ] Audience selector (everyone, paid only, free only, founding)
+- [ ] Confirmation before direct publish
+- [ ] Post link display after publication
+- [ ] Progress bar during upload
+- [ ] Clickable success notification with link
 
-## v1.3.0 - Gestion des drafts
-> **Étude**: [docs/studies/v1.3-draft-management.md](docs/studies/v1.3-draft-management.md)
-> **Estimation**: ~14h
+## v1.3.0 - Draft Management
 
-- [ ] Liste des drafts existants
-- [ ] Mise à jour d'un draft existant (au lieu de créer nouveau)
-- [ ] Suppression de drafts
-- [ ] Liaison note ↔ draft via frontmatter
+- [ ] List existing drafts
+- [ ] Update existing draft (instead of creating new)
+- [ ] Delete drafts
+- [ ] Link note ↔ draft via frontmatter
 
-## v1.4.0 - Authentification simplifiée (PRIORITAIRE)
-- [ ] Login OAuth-like dans une webview Obsidian
-- [ ] Récupération automatique du cookie après login
-- [ ] Refresh automatique du cookie avant expiration
-- [ ] Indicateur de statut de connexion dans les settings
-- [ ] Bouton "Se connecter à Substack" (plus de copie manuelle de cookie)
+## v1.4.0 - Metadata
 
-## v1.5.0 - Métadonnées
-- [ ] Support du frontmatter YAML pour métadonnées
+- [ ] YAML frontmatter support for metadata
   - `title`, `subtitle`, `audience`
   - `tags`, `section`
-  - `scheduled_date` (publication programmée)
-- [ ] Extraction automatique du titre depuis H1 ou frontmatter
-
-## v1.5.0 - Multi-compte
-- [ ] Support de plusieurs comptes Substack
-- [ ] Profils de configuration
-- [ ] Switch rapide entre comptes
+  - `scheduled_date` (scheduled publishing)
+- [ ] Auto-extract title from H1 or frontmatter
 
 ---
 
-## v2.0.0 - Fonctionnalités avancées
-- [ ] Éditeur WYSIWYG preview (côte à côte)
-- [ ] Templates de posts
-- [ ] Statistiques de publication (vues, likes, comments)
-- [ ] Intégration avec Obsidian Publish
-- [ ] Support des newsletters programmées
-- [ ] Paywall marker dans le Markdown (`<!-- paywall -->`)
+## v2.0.0 - Advanced Features
+
+- [ ] WYSIWYG preview (side by side)
+- [ ] Post templates
+- [ ] Publishing statistics (views, likes, comments)
+- [ ] Scheduled newsletters support
+- [ ] Paywall marker in Markdown (`<!-- paywall -->`)
 
 ---
 
-## Backlog (non priorisé)
-- [ ] Support des podcasts Substack
-- [ ] Import de posts Substack → Obsidian
-- [ ] Conversion inverse (Substack JSON → Markdown)
-- [ ] Support des footnotes
-- [ ] Support des tables Markdown
-- [ ] Intégration avec d'autres plateformes (Medium, Ghost, etc.)
-- [ ] Mode hors-ligne avec queue de publication
-- [ ] Historique des publications dans une note dédiée
+## Backlog (Unprioritized)
+
+- [ ] Substack podcast support
+- [ ] Import Substack posts → Obsidian
+- [ ] Reverse conversion (Substack JSON → Markdown)
+- [ ] Footnotes support
+- [ ] Markdown tables support
+- [ ] Integration with other platforms (Medium, Ghost, etc.)
+- [ ] Offline mode with publish queue
+- [ ] Publication history in dedicated note
 
 ---
 
-## Notes techniques
+## Known Limitations
 
-### Limitations connues
-- API Substack non-officielle (peut changer)
-- Cookie expire après ~30 jours
-- Pas de support OAuth (Substack n'en propose pas)
-
-### Dépendances à surveiller
-- `obsidian` API changes
-- Format JSON Substack (non documenté)
+- Unofficial Substack API (may change without notice)
+- Cookie expires after ~30 days
+- No OAuth support (Substack doesn't offer it)
+- Image upload not yet supported (v1.0)

@@ -1,7 +1,7 @@
 # Handover - Obsidian Substack Publisher
 
 **Date**: 2025-11-25
-**Session précédente**: Phase 1 complétée - Squelette compilable
+**Session précédente**: Phase 1-3 complétées - Plugin fonctionnel, prêt pour tests
 
 ---
 
@@ -164,3 +164,13 @@ git show substack-mcp/main:src/handlers/post_handler.py | head -200
 ---
 
 **Prochaine action** : PHASE 4 - Tests manuels dans Obsidian
+
+## Pour tester le plugin
+
+1. Copier `main.js`, `manifest.json`, `styles.css` dans `<vault>/.obsidian/plugins/obsidian-substack/`
+2. Activer le plugin dans Obsidian Settings > Community plugins
+3. Configurer dans Settings > Substack Publisher :
+   - Cookie Substack (récupérer `substack.sid` ou `connect.sid` depuis les DevTools)
+   - Nom(s) de publication(s) (ex: `mypub`)
+4. Ouvrir une note Markdown, cliquer sur l'icône ribbon ou Cmd+P > "Publish to Substack"
+5. Tester Draft et Publish

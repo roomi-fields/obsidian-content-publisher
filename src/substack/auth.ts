@@ -33,7 +33,7 @@ interface CookieStore {
   get(filter: { domain: string }): Promise<ElectronCookie[]>;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- Used as type reference for typeof in ElectronModule interface
 declare class BrowserWindowClass {
   constructor(options: BrowserWindowOptions);
   setMenuBarVisibility(visible: boolean): void;
@@ -86,16 +86,14 @@ export class SubstackAuth {
   /**
    * Open Substack login window and capture cookie after authentication
    */
-  async login(): Promise<void> {
+  login(): void {
     if (!this.isAvailable()) {
       new Notice("Auto-login is only available on desktop. Please copy your cookie manually.");
       return;
     }
 
     try {
-      // Dynamic import of Electron to avoid errors on mobile
       // Obsidian desktop runs in Electron renderer - window.require is the only way to access Electron APIs
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const electron = window.require("electron") as ElectronModule;
       const remote = electron.remote ?? electron;
       const { BrowserWindow } = remote;
@@ -160,7 +158,7 @@ export class SubstackAuth {
 
             cookieCaptured = true;
             this.onCookieCaptured(cookieValue);
-            new Notice("Successfully logged in to Substack");
+            new Notice("Login successful");
             authWindow.close();
             return true;
           }

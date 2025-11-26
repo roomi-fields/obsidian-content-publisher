@@ -37,7 +37,7 @@ export class SubstackPostComposer extends Modal {
   override onOpen() {
     const { contentEl } = this;
 
-    new Setting(contentEl).setName("Publish to Substack").setHeading();
+    new Setting(contentEl).setName("Publish to substack").setHeading();
 
     // Publication selector
     const pubContainer = contentEl.createDiv({ cls: "substack-field-container" });
@@ -133,7 +133,7 @@ export class SubstackPostComposer extends Modal {
 
     // Note
     contentEl.createEl("div", {
-      text: "Note: The active note will be converted and published to Substack.",
+      text: "The active note will be converted and published.",
       cls: "substack-note-text"
     });
   }
@@ -179,7 +179,7 @@ export class SubstackPostComposer extends Modal {
 
       if (response.status === 200 || response.status === 201) {
         this.logger.info("Draft created successfully");
-        new Notice("Draft saved to Substack");
+        new Notice("Draft saved successfully");
         this.close();
       } else {
         throw new Error(this.getErrorMessage(response.status));
@@ -237,7 +237,7 @@ export class SubstackPostComposer extends Modal {
 
       if (publishResponse.status === 200 || publishResponse.status === 201) {
         this.logger.info("Post published successfully");
-        new Notice("Published to Substack");
+        new Notice("Published successfully");
         this.close();
       } else {
         throw new Error(this.getErrorMessage(publishResponse.status, "publish"));

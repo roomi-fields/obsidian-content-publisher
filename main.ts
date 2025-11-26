@@ -97,7 +97,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     this.logger.logCommandExecution("publish-to-substack");
 
     if (!this.settings.substackCookie) {
-      new Notice("Please configure your Substack authentication in settings first.");
+      new Notice("Please configure your substack authentication in settings first.");
       return;
     }
 
@@ -153,7 +153,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
                   this.display(); // Refresh UI
                 });
               });
-              void auth.login();
+              auth.login();
             });
         });
     }
@@ -168,7 +168,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       )
       .addText((text) => {
         text
-          .setPlaceholder("substack.sid=...")
+          .setPlaceholder("Enter cookie value")
           .setValue(this.plugin.settings.substackCookie)
           .onChange(async (value) => {
             this.plugin.settings.substackCookie = value;
@@ -187,11 +187,11 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Subdomains")
       .setDesc(
-        "Comma-separated list of your Substack publication subdomains (e.g., mypub, anotherpub)"
+        "Comma-separated list of your publication subdomains (e.g., mypub, anotherpub)"
       )
       .addText((text) => {
         text
-          .setPlaceholder("mypub, anotherpub")
+          .setPlaceholder("your-publication")
           .setValue(this.plugin.settings.publications.join(", "))
           .onChange(async (value) => {
             this.plugin.settings.publications = value
@@ -260,7 +260,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
     });
 
     versionContent.createEl("p", {
-      text: "By Romain Peyrichou",
+      text: "by Romain Peyrichou",
       attr: { class: "substack-version-author" }
     });
 

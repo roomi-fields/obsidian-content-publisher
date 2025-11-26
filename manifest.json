@@ -1,7 +1,7 @@
 {
 	"id": "substack-publisher",
 	"name": "Substack Publisher",
-	"version": "1.0.3",
+	"version": "1.0.4",
 	"minAppVersion": "1.0.0",
 	"description": "Publish your notes directly to Substack as drafts or published posts.",
 	"author": "Romain Peyrichou",

@@ -191,7 +191,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       )
       .addText((text) => {
         text
-          .setPlaceholder("publication")
+          .setPlaceholder("Publication")
           .setValue(this.plugin.settings.publications.join(", "))
           .onChange(async (value) => {
             this.plugin.settings.publications = value
@@ -259,8 +259,9 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       attr: { class: "substack-version-name" }
     });
 
-    versionContent.createEl("p", {
-      text: "By Romain Peyrichou",
+    versionContent.createEl("a", {
+      text: "Roomi-fields",
+      href: "https://github.com/roomi-fields",
       attr: { class: "substack-version-author" }
     });
 

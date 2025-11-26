@@ -1,6 +1,6 @@
 {
 	"name": "substack-publisher",
-	"version": "1.0.5",
+	"version": "1.0.6",
 	"description": "Publish your notes directly to Substack as drafts or published posts.",
 	"main": "main.js",
 	"type": "module",
@@ -32,6 +32,7 @@
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.29.0",
+		"@eslint/json": "^0.14.0",
 		"@types/node": "^24.0.3",
 		"@typescript-eslint/eslint-plugin": "^8.34.1",
 		"@typescript-eslint/parser": "^8.34.1",
@@ -39,9 +40,11 @@
 		"builtin-modules": "^3.3.0",
 		"esbuild": "^0.25.5",
 		"eslint": "^9.29.0",
+		"eslint-plugin-obsidianmd": "^0.1.9",
 		"jsdom": "^26.0.0",
 		"obsidian": "^1.8.7",
 		"typescript": "^5.8.3",
+		"typescript-eslint": "^8.48.0",
 		"vitest": "^3.2.4"
 	},
 	"repository": {

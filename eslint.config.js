@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import typescript from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
+import obsidianPlugin from 'eslint-plugin-obsidianmd';
 
 export default [
   js.configs.recommended,
@@ -31,6 +32,7 @@ export default [
     },
     plugins: {
       '@typescript-eslint': typescript,
+      'obsidianmd': obsidianPlugin,
     },
     rules: {
       'no-unused-vars': 'off',
@@ -54,6 +56,8 @@ export default [
       'indent': ['error', 2],
       'no-trailing-spaces': 'error',
       'eol-last': 'error',
+      // Obsidian specific rules
+      'obsidianmd/ui/sentence-case': 'error',
     },
   },
   {

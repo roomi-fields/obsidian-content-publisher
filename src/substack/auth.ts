@@ -18,12 +18,10 @@ export class SubstackAuth {
   }
 
   /**
-   * Validate that a cookie provides a valid authenticated session
-   * Tests against the user's publication drafts endpoint
+   * Basic format check for cookie string
+   * Only validates format, not actual session validity
    */
-  private validateSession(cookie: string): boolean {
-    // Skip validation for now - just check we have a cookie value
-    // The real validation will happen when user tries to publish
+  private hasValidCookieFormat(cookie: string): boolean {
     return cookie.includes("substack.sid=") && cookie.length > 30;
   }
 
@@ -75,7 +73,7 @@ export class SubstackAuth {
 
       let cookieCaptured = false;
 
-      // Check for cookie - validates session before capturing
+      // Check for cookie - captures when format is valid
       const checkCookie = async (): Promise<boolean> => {
         if (cookieCaptured) return true;
 
@@ -97,9 +95,9 @@ export class SubstackAuth {
 
             const cookieValue = relevantCookies || `substack.sid=${sidCookie.value}`;
 
-            // Validate the session
-            const isValid = this.validateSession(cookieValue);
-            if (!isValid) {
+            // Check cookie format before capturing
+            const hasValidFormat = this.hasValidCookieFormat(cookieValue);
+            if (!hasValidFormat) {
               return false;
             }
 
@@ -110,7 +108,8 @@ export class SubstackAuth {
             return true;
           }
         } catch {
-          // Silently fail - cookie not ready yet
+          // Expected during login flow - cookies may not be available yet
+          // Errors here are typically timing-related, not fatal
         }
         return false;
       };

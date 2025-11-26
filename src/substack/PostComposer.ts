@@ -94,10 +94,12 @@ export class SubstackPostComposer extends Modal {
     const preview = previewContainer.createEl("div", { cls: "substack-preview" });
 
     if (activeFile) {
-      void this.app.vault.cachedRead(activeFile).then((content) => {
+      this.app.vault.cachedRead(activeFile).then((content) => {
         // Remove frontmatter for preview
         const cleanContent = content.replace(/^---[\s\S]*?---\n?/, "");
         preview.textContent = cleanContent.slice(0, 500) + (cleanContent.length > 500 ? "..." : "");
+      }).catch(() => {
+        preview.textContent = "Failed to load preview";
       });
     } else {
       preview.textContent = "No active file selected";
@@ -222,7 +224,10 @@ export class SubstackPostComposer extends Modal {
         throw new Error(this.getErrorMessage(draftResponse.status));
       }
 
-      const draftId = draftResponse.json.id;
+      const draftId = draftResponse.json?.id as string | undefined;
+      if (!draftId) {
+        throw new Error("Invalid response from Substack: missing draft ID");
+      }
 
       // Then publish
       const publishResponse = await this.api.publishDraft(

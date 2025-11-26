@@ -71,7 +71,7 @@ export class Logger {
     let logLine = formattedMessage;
     if (data !== undefined) {
       try {
-        logLine += " " + JSON.stringify(data, null, 0);
+        logLine += ` ${  JSON.stringify(data, null, 0)}`;
       } catch {
         logLine += " [unserializable data]";
       }
@@ -104,7 +104,7 @@ export class Logger {
         if (content.length > MAX_LOG_SIZE) {
           const lines = content.split("\n");
           content = lines.slice(Math.floor(lines.length / 2)).join("\n");
-          content = "[... truncated ...]\n" + content;
+          content = `[... truncated ...]\n${  content}`;
         }
 
         await vault.modify(logFile, content + logsToWrite);

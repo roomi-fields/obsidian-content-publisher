@@ -17,6 +17,16 @@ export default [
         process: 'readonly',
         window: 'readonly',
         MouseEvent: 'readonly',
+        HTMLButtonElement: 'readonly',
+        HTMLInputElement: 'readonly',
+        HTMLSelectElement: 'readonly',
+        HTMLElement: 'readonly',
+        NodeJS: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearTimeout: 'readonly',
+        clearInterval: 'readonly',
+        require: 'readonly'
       },
     },
     plugins: {

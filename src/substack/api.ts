@@ -2,7 +2,7 @@ import { requestUrl, RequestUrlResponse } from "obsidian";
 import {
   SubstackDocument,
   SubstackDraftPayload,
-  SubstackDraftResponse,
+  SubstackDraftResponse
 } from "./types";
 
 export class SubstackAPI {
@@ -35,7 +35,7 @@ export class SubstackAPI {
   private getHeaders(): Record<string, string> {
     return {
       "Content-Type": "application/json",
-      Cookie: this.cookie,
+      Cookie: this.cookie
     };
   }
 
@@ -54,7 +54,7 @@ export class SubstackAPI {
       audience,
       type: "newsletter",
       section_chosen: false,
-      write_comment_permissions: "everyone",
+      write_comment_permissions: "everyone"
     };
 
     const url = `${this.getBaseUrl(publication)}/drafts`;
@@ -63,7 +63,7 @@ export class SubstackAPI {
       url,
       method: "POST",
       headers: this.getHeaders(),
-      body: JSON.stringify(payload),
+      body: JSON.stringify(payload)
     });
 
     return response;
@@ -76,7 +76,7 @@ export class SubstackAPI {
     const response = await requestUrl({
       url: `${this.getBaseUrl(publication)}/drafts/${draftId}/publish`,
       method: "POST",
-      headers: this.getHeaders(),
+      headers: this.getHeaders()
     });
 
     return response;
@@ -86,7 +86,7 @@ export class SubstackAPI {
     const response = await requestUrl({
       url: `${this.getBaseUrl(publication)}/drafts`,
       method: "GET",
-      headers: this.getHeaders(),
+      headers: this.getHeaders()
     });
 
     return response;
@@ -101,7 +101,7 @@ export class SubstackAPI {
       url: `${this.getBaseUrl(publication)}/drafts/${draftId}`,
       method: "PUT",
       headers: this.getHeaders(),
-      body: JSON.stringify(updates),
+      body: JSON.stringify(updates)
     });
 
     return response;
@@ -114,7 +114,7 @@ export class SubstackAPI {
     const response = await requestUrl({
       url: `${this.getBaseUrl(publication)}/drafts/${draftId}`,
       method: "GET",
-      headers: this.getHeaders(),
+      headers: this.getHeaders()
     });
 
     return response;

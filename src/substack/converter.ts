@@ -15,7 +15,7 @@ import {
   ImageBlock,
   HorizontalRuleBlock,
   SubstackBlock,
-  SubstackDocument,
+  SubstackDocument
 } from "./types";
 
 // Escape sequences for protected characters
@@ -31,7 +31,7 @@ class BlockBuilder {
     if (typeof content === "string") {
       return {
         type: "paragraph",
-        content: [{ type: "text", text: content }],
+        content: [{ type: "text", text: content }]
       };
     }
     return { type: "paragraph", content };
@@ -49,7 +49,7 @@ class BlockBuilder {
     return {
       type: "heading",
       attrs: { level: level as 1 | 2 | 3 | 4 | 5 | 6 },
-      content: [{ type: "text", text }],
+      content: [{ type: "text", text }]
     };
   }
 
@@ -58,8 +58,8 @@ class BlockBuilder {
       type: "bulletList",
       content: items.map((itemContent) => ({
         type: "listItem" as const,
-        content: [this.paragraph(itemContent)],
-      })),
+        content: [this.paragraph(itemContent)]
+      }))
     };
   }
 
@@ -68,15 +68,15 @@ class BlockBuilder {
       type: "orderedList",
       content: items.map((itemContent) => ({
         type: "listItem" as const,
-        content: [this.paragraph(itemContent)],
-      })),
+        content: [this.paragraph(itemContent)]
+      }))
     };
   }
 
   codeBlock(code: string, language: string = ""): CodeBlock {
     const block: CodeBlock = {
       type: "codeBlock",
-      content: [{ type: "text", text: code }],
+      content: [{ type: "text", text: code }]
     };
     if (language) {
       block.attrs = { language };
@@ -87,20 +87,20 @@ class BlockBuilder {
   blockquote(content: string): BlockquoteBlock {
     return {
       type: "blockquote",
-      content: [this.paragraph(content)],
+      content: [this.paragraph(content)]
     };
   }
 
   image(src: string, alt: string, title: string = ""): ImageBlock {
     const attrs: ImageBlock["attrs"] = {
       src,
-      fullscreen: false,
+      fullscreen: false
     };
     if (alt) attrs.alt = alt;
     if (title) attrs.title = title;
     return {
       type: "image2",
-      attrs,
+      attrs
     };
   }
 
@@ -108,7 +108,7 @@ class BlockBuilder {
     return {
       type: "text",
       text: linkText,
-      marks: [{ type: "link", attrs: { href } }],
+      marks: [{ type: "link", attrs: { href } }]
     };
   }
 
@@ -142,7 +142,7 @@ export class MarkdownConverter {
     const blocks = this.convertToBlocks(markdown);
     return {
       type: "doc",
-      content: blocks,
+      content: blocks
     };
   }
 
@@ -424,7 +424,7 @@ export class MarkdownConverter {
 
   private parseInlineFormatting(text: string): TextContent[] {
     // Handle escaped characters
-    let processedText = text
+    const processedText = text
       .replace(/\\\*/g, ESCAPED_ASTERISK)
       .replace(/\\\[/g, ESCAPED_BRACKET_OPEN)
       .replace(/\\\]/g, ESCAPED_BRACKET_CLOSE);
@@ -437,7 +437,7 @@ export class MarkdownConverter {
       { regex: /\*\*([^*]+)\*\*/, type: "bold" },
       { regex: /\*([^*]+)\*/, type: "italic" },
       { regex: /\[([^\]]+)\]\(([^)]+)\)/, type: "link" },
-      { regex: /`([^`]+)`/, type: "code" },
+      { regex: /`([^`]+)`/, type: "code" }
     ];
 
     while (remaining) {
@@ -463,31 +463,31 @@ export class MarkdownConverter {
 
         // Add the formatted element
         switch (nextType) {
-          case "bold_italic":
-            elements.push(
-              this.restoreEscapedChars(this.builder.text(nextMatch[1] ?? "", ["strong", "em"]))
-            );
-            break;
-          case "bold":
-            elements.push(
-              this.restoreEscapedChars(this.builder.text(nextMatch[1] ?? "", ["strong"]))
-            );
-            break;
-          case "italic":
-            elements.push(
-              this.restoreEscapedChars(this.builder.text(nextMatch[1] ?? "", ["em"]))
-            );
-            break;
-          case "link":
-            elements.push(
-              this.restoreEscapedChars(this.builder.link(nextMatch[1] ?? "", nextMatch[2] ?? ""))
-            );
-            break;
-          case "code":
-            elements.push(
-              this.restoreEscapedChars(this.builder.text(nextMatch[1] ?? "", ["code"]))
-            );
-            break;
+        case "bold_italic":
+          elements.push(
+            this.restoreEscapedChars(this.builder.text(nextMatch[1] ?? "", ["strong", "em"]))
+          );
+          break;
+        case "bold":
+          elements.push(
+            this.restoreEscapedChars(this.builder.text(nextMatch[1] ?? "", ["strong"]))
+          );
+          break;
+        case "italic":
+          elements.push(
+            this.restoreEscapedChars(this.builder.text(nextMatch[1] ?? "", ["em"]))
+          );
+          break;
+        case "link":
+          elements.push(
+            this.restoreEscapedChars(this.builder.link(nextMatch[1] ?? "", nextMatch[2] ?? ""))
+          );
+          break;
+        case "code":
+          elements.push(
+            this.restoreEscapedChars(this.builder.text(nextMatch[1] ?? "", ["code"]))
+          );
+          break;
         }
 
         remaining = remaining.slice(nextMatch.index + nextMatch[0].length);

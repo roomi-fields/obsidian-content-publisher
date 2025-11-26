@@ -55,7 +55,7 @@ export class SubstackPostComposer extends Modal {
     const titleInput = titleContainer.createEl("input", {
       type: "text",
       placeholder: "Post title",
-      cls: "substack-input",
+      cls: "substack-input"
     });
 
     // Pre-fill with active file name if available
@@ -75,7 +75,7 @@ export class SubstackPostComposer extends Modal {
     const subtitleInput = subtitleContainer.createEl("input", {
       type: "text",
       placeholder: "Post subtitle",
-      cls: "substack-input",
+      cls: "substack-input"
     });
 
     subtitleInput.addEventListener("input", () => {
@@ -102,14 +102,14 @@ export class SubstackPostComposer extends Modal {
 
     buttonContainer.createEl("button", {
       text: "Cancel",
-      cls: "substack-cancel-button",
+      cls: "substack-cancel-button"
     }).addEventListener("click", () => {
       this.close();
     });
 
     this.draftButton = buttonContainer.createEl("button", {
       text: "Save as Draft",
-      cls: "substack-draft-button",
+      cls: "substack-draft-button"
     });
     this.draftButton.addEventListener("click", async () => {
       await this.saveDraft();
@@ -117,7 +117,7 @@ export class SubstackPostComposer extends Modal {
 
     this.publishButton = buttonContainer.createEl("button", {
       text: "Publish",
-      cls: "substack-publish-button",
+      cls: "substack-publish-button"
     });
     this.publishButton.addEventListener("click", async () => {
       await this.publish();
@@ -126,7 +126,7 @@ export class SubstackPostComposer extends Modal {
     // Note
     contentEl.createEl("div", {
       text: "Note: The active note will be converted and published to Substack.",
-      cls: "substack-note-text",
+      cls: "substack-note-text"
     });
   }
 
@@ -156,7 +156,7 @@ export class SubstackPostComposer extends Modal {
     try {
       this.logger.debug("Creating Substack draft", {
         publication: this.selectedPublication,
-        title: this.title,
+        title: this.title
       });
 
       // Convert markdown to Substack JSON format
@@ -198,7 +198,7 @@ export class SubstackPostComposer extends Modal {
     try {
       this.logger.debug("Publishing to Substack", {
         publication: this.selectedPublication,
-        title: this.title,
+        title: this.title
       });
 
       // Convert markdown to Substack JSON format
@@ -241,19 +241,19 @@ export class SubstackPostComposer extends Modal {
 
   private getErrorMessage(status: number, action: string = "create draft"): string {
     switch (status) {
-      case 401:
-      case 403:
-        return "Session expired or invalid. Please login again in Settings.";
-      case 404:
-        return `Publication not found. Check your publication name in Settings.`;
-      case 429:
-        return "Too many requests. Please wait a moment and try again.";
-      case 500:
-      case 502:
-      case 503:
-        return "Substack is temporarily unavailable. Please try again later.";
-      default:
-        return `Failed to ${action} (error ${status})`;
+    case 401:
+    case 403:
+      return "Session expired or invalid. Please login again in Settings.";
+    case 404:
+      return "Publication not found. Check your publication name in Settings.";
+    case 429:
+      return "Too many requests. Please wait a moment and try again.";
+    case 500:
+    case 502:
+    case 503:
+      return "Substack is temporarily unavailable. Please try again later.";
+    default:
+      return `Failed to ${action} (error ${status})`;
     }
   }
 

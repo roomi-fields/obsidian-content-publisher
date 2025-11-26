@@ -45,7 +45,7 @@ export class SubstackAuth {
 
     try {
       // Dynamic import of Electron to avoid errors on mobile
-      // eslint-disable-next-line @typescript-eslint/no-require-imports -- Electron requires CommonJS dynamic import at runtime
+
       const electron = require("electron");
       const { BrowserWindow } = electron.remote || electron;
 
@@ -66,8 +66,8 @@ export class SubstackAuth {
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
-          session: authSession,
-        },
+          session: authSession
+        }
       });
 
       // Hide menu bar
@@ -82,7 +82,7 @@ export class SubstackAuth {
         try {
           // Get ALL substack cookies from this window's session
           const allCookies: ElectronCookie[] = await authWindow.webContents.session.cookies.get({
-            domain: ".substack.com",
+            domain: ".substack.com"
           });
 
           // Find the sid cookie
@@ -182,8 +182,8 @@ export async function validateSubstackCookie(cookie: string): Promise<boolean> {
       url: "https://substack.com/api/v1/user/profile",
       method: "GET",
       headers: {
-        Cookie: cookie,
-      },
+        Cookie: cookie
+      }
     });
     return response.status === 200;
   } catch {

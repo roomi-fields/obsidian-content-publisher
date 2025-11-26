@@ -1,7 +1,7 @@
 {
 	"name": "substack-publisher",
 	"version": "1.0.0",
-	"description": "Publish your Obsidian notes directly to Substack as drafts or published posts.",
+	"description": "Publish your notes directly to Substack as drafts or published posts.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

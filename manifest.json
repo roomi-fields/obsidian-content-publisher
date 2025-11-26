@@ -3,7 +3,7 @@
 	"name": "Substack Publisher",
 	"version": "1.0.0",
 	"minAppVersion": "1.0.0",
-	"description": "Publish your Obsidian notes directly to Substack as drafts or published posts.",
+	"description": "Publish your notes directly to Substack as drafts or published posts.",
 	"author": "Romain Peyrichou",
 	"authorUrl": "https://github.com/roomi-fields",
 	"fundingUrl": "",

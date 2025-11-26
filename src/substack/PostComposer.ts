@@ -37,7 +37,7 @@ export class SubstackPostComposer extends Modal {
   override onOpen() {
     const { contentEl } = this;
 
-    new Setting(contentEl).setName("Publish").setHeading();
+    new Setting(contentEl).setName("Publish to Substack").setHeading();
 
     // Publication selector
     const pubContainer = contentEl.createDiv({ cls: "substack-field-container" });
@@ -119,16 +119,16 @@ export class SubstackPostComposer extends Modal {
       text: "Save as draft",
       cls: "substack-draft-button"
     });
-    this.draftButton.addEventListener("click", async () => {
-      await this.saveDraft();
+    this.draftButton.addEventListener("click", () => {
+      void this.saveDraft();
     });
 
     this.publishButton = buttonContainer.createEl("button", {
       text: "Publish",
       cls: "substack-publish-button"
     });
-    this.publishButton.addEventListener("click", async () => {
-      await this.publish();
+    this.publishButton.addEventListener("click", () => {
+      void this.publish();
     });
 
     // Note
@@ -179,7 +179,7 @@ export class SubstackPostComposer extends Modal {
 
       if (response.status === 200 || response.status === 201) {
         this.logger.info("Draft created successfully");
-        new Notice("Draft saved to Substack!");
+        new Notice("Draft saved to Substack");
         this.close();
       } else {
         throw new Error(this.getErrorMessage(response.status));
@@ -237,7 +237,7 @@ export class SubstackPostComposer extends Modal {
 
       if (publishResponse.status === 200 || publishResponse.status === 201) {
         this.logger.info("Post published successfully");
-        new Notice("Published to Substack!");
+        new Notice("Published to Substack");
         this.close();
       } else {
         throw new Error(this.getErrorMessage(publishResponse.status, "publish"));

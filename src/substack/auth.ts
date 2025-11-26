@@ -1,4 +1,4 @@
-import { Notice, Platform, requestUrl } from "obsidian";
+import { Notice, Platform } from "obsidian";
 
 /**
  * Handles Substack authentication via Electron BrowserWindow
@@ -8,6 +8,57 @@ interface ElectronCookie {
   name: string;
   value: string;
   domain?: string;
+}
+
+interface ElectronModule {
+  remote?: ElectronRemote;
+  BrowserWindow?: typeof BrowserWindowClass;
+  session?: ElectronSession;
+}
+
+interface ElectronRemote {
+  BrowserWindow: typeof BrowserWindowClass;
+  session: ElectronSession;
+}
+
+interface ElectronSession {
+  fromPartition(partition: string): SessionInstance;
+}
+
+interface SessionInstance {
+  cookies: CookieStore;
+}
+
+interface CookieStore {
+  get(filter: { domain: string }): Promise<ElectronCookie[]>;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+declare class BrowserWindowClass {
+  constructor(options: BrowserWindowOptions);
+  setMenuBarVisibility(visible: boolean): void;
+  webContents: WebContents;
+  isDestroyed(): boolean;
+  close(): void;
+  loadURL(url: string): void;
+  on(event: string, callback: () => void): void;
+}
+
+interface BrowserWindowOptions {
+  width: number;
+  height: number;
+  title: string;
+  webPreferences: {
+    nodeIntegration: boolean;
+    contextIsolation: boolean;
+    session: SessionInstance;
+  };
+}
+
+interface WebContents {
+  session: { cookies: CookieStore };
+  getURL(): string;
+  on(event: string, callback: (event: unknown, url: string) => void): void;
 }
 
 export class SubstackAuth {
@@ -43,9 +94,11 @@ export class SubstackAuth {
 
     try {
       // Dynamic import of Electron to avoid errors on mobile
-      // Use window.require for Obsidian's Electron environment
-      const electron = window.require("electron");
-      const { BrowserWindow } = electron.remote || electron;
+      // Obsidian desktop runs in Electron renderer - window.require is the only way to access Electron APIs
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const electron = window.require("electron") as ElectronModule;
+      const remote = electron.remote ?? electron;
+      const { BrowserWindow } = remote;
 
       if (!BrowserWindow) {
         new Notice("Cannot access browser window. Please copy your cookie manually.");
@@ -53,7 +106,11 @@ export class SubstackAuth {
       }
 
       // Use a separate session to avoid sharing with system browser
-      const { session } = electron.remote || electron;
+      const { session } = remote;
+      if (!session) {
+        new Notice("Cannot access session. Please copy your cookie manually.");
+        return;
+      }
       const partition = `persist:substack-auth-${Date.now()}`;
       const authSession = session.fromPartition(partition);
 
@@ -103,7 +160,7 @@ export class SubstackAuth {
 
             cookieCaptured = true;
             this.onCookieCaptured(cookieValue);
-            new Notice("Successfully logged in to Substack!");
+            new Notice("Successfully logged in to Substack");
             authWindow.close();
             return true;
           }

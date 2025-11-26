@@ -46,9 +46,9 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     const ribbonIconEl = this.addRibbonIcon(
       "send",
-      "Publish to Substack",
+      "Publish to substack",
       () => {
-        void this.publishToSubstack();
+        this.publishToSubstack();
       }
     );
 
@@ -56,9 +56,9 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     this.addCommand({
       id: "publish-to-substack",
-      name: "Publish to Substack",
-      callback: async () => {
-        await this.publishToSubstack();
+      name: "Publish to substack",
+      callback: () => {
+        this.publishToSubstack();
       }
     });
 
@@ -93,16 +93,16 @@ export default class SubstackPublisherPlugin extends Plugin {
     }
   }
 
-  private async publishToSubstack() {
+  private publishToSubstack(): void {
     this.logger.logCommandExecution("publish-to-substack");
 
     if (!this.settings.substackCookie) {
-      new Notice("Please configure your Substack authentication in settings first");
+      new Notice("Please configure your Substack authentication in settings first.");
       return;
     }
 
     if (this.settings.publications.length === 0) {
-      new Notice("Please add at least one publication in settings first");
+      new Notice("Please add at least one publication in settings first.");
       return;
     }
 
@@ -141,18 +141,19 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
 
       new Setting(containerEl)
         .setName("Login")
-        .setDesc(`${authStatus}. Click to open Substack login window and automatically capture your session.`)
+        .setDesc(`${authStatus}. Click to open Substack login window and automatically capture your session`)
         .addButton((button) => {
           button
             .setButtonText(this.plugin.settings.substackCookie ? "Re-login" : "Login")
             .setCta()
-            .onClick(async () => {
-              const auth = new SubstackAuth(async (cookie) => {
+            .onClick(() => {
+              const auth = new SubstackAuth((cookie) => {
                 this.plugin.settings.substackCookie = cookie;
-                await this.plugin.saveSettings();
-                this.display(); // Refresh UI
+                void this.plugin.saveSettings().then(() => {
+                  this.display(); // Refresh UI
+                });
               });
-              await auth.login();
+              void auth.login();
             });
         });
     }
@@ -181,10 +182,10 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       manualSetting.settingEl.addClass("substack-setting-muted");
     }
 
-    new Setting(containerEl).setName("Publications").setHeading();
+    new Setting(containerEl).setName("Publication").setHeading();
 
     new Setting(containerEl)
-      .setName("Publication subdomains")
+      .setName("Subdomains")
       .setDesc(
         "Comma-separated list of your Substack publication subdomains (e.g., mypub, anotherpub)"
       )
@@ -201,7 +202,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
           });
       });
 
-    new Setting(containerEl).setName("Developer").setHeading();
+    new Setting(containerEl).setName("Advanced").setHeading();
 
     new Setting(containerEl)
       .setName("Dev mode")
@@ -254,7 +255,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
     });
 
     versionContent.createEl("p", {
-      text: "Substack Publisher",
+      text: "Substack publisher",
       attr: { class: "substack-version-name" }
     });
 

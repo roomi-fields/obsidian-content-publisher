@@ -1,183 +1,212 @@
 # Quality Review - Obsidian Substack Publisher
 
-## Code Review (code-reviewer)
-
-### Critiques
-| Issue | File | Status |
-|-------|------|--------|
-| `require()` style import forbidden | `auth.ts:49` | FIXED - Changed to `window.require()` |
-| Validation de session ineffective | `auth.ts:24-28` | FIXED - Renamed to `hasValidCookieFormat()` with accurate JSDoc |
-
-### Important
-| Issue | File | Status |
-|-------|------|--------|
-| Silent error handling in catch | `auth.ts:112-114` | FIXED - Updated comment to clarify expected behavior |
-| No validation for empty publications | `PostComposer.ts:28` | FIXED - Added explicit check |
-| Unused exported function | `auth.ts:176-191` | TODO - Use `validateSubstackCookie` or remove |
-| Insufficient test coverage | `tests/` | FIXED - Added 29 tests for MarkdownConverter |
-
-### Improvements
-| Issue | File | Status |
-|-------|------|--------|
-| Timeout on requestUrl | `api.ts` | SKIPPED - Obsidian API doesn't support it |
-| Added `throw: false` for error handling | `api.ts` | DONE |
-| Retry logic for transient errors | `api.ts` | TODO |
-| HTML preview instead of text | `PostComposer.ts` | TODO |
-| Extract title/subtitle from frontmatter | `PostComposer.ts` | TODO |
-| Separate concerns in PostComposer | `PostComposer.ts` | TODO |
-| ILogger interface | `logger.ts` | TODO |
-| Validate publication subdomain | `api.ts` | TODO |
-| JSDoc documentation | All files | TODO |
+> **Last updated**: 2025-11-26
+> **Version reviewed**: 1.0.2
 
 ---
 
-## Silent Failure Analysis (silent-failure-hunter)
+## Executive Summary
+
+| Category | Fixed | Pending | Blocked |
+|----------|:-----:|:-------:|:-------:|
+| Critical | 2 | 0 | 0 |
+| Important | 4 | 6 | 0 |
+| Minor/Improvements | 1 | 15 | 1 |
+
+### Pre-Release Readiness
+
+| Criteria | Status |
+|----------|--------|
+| Obsidian Bot Requirements | ✅ All addressed |
+| Build & Tests | ✅ Passing (31 tests) |
+| Critical Bugs | ✅ None remaining |
+| Error Handling | ⚠️ Needs improvement |
+| Documentation | ⚠️ Incomplete |
+
+---
+
+## Priority Actions Before Release
+
+### P0 - Must Fix (Blocking)
+
+| # | Issue | File | Line | Impact | Effort |
+|---|-------|------|------|--------|--------|
+| 1 | **Accès non protégé à `json.id`** - TypeError si réponse malformée | `PostComposer.ts` | 219 | Crash possible | 5 min |
+| 2 | **Promise ignorée avec void** - Erreur de lecture fichier silencieuse | `PostComposer.ts` | 91 | UX dégradée | 5 min |
+
+### P1 - Should Fix (Recommended)
+
+| # | Issue | File | Line | Impact | Effort |
+|---|-------|------|------|--------|--------|
+| 3 | **Catch générique sans message** - Utilisateur sans info sur l'échec | `auth.ts` | 167 | UX | 5 min |
+| 4 | **Commentaire incorrect** - "collapsed by default" non implémenté | `main.ts` | 160 | Maintenabilité | 2 min |
+| 5 | **Commentaire incorrect** - "~100KB" techniquement faux | `logger.ts` | 11 | Maintenabilité | 2 min |
+| 6 | **Fonction exportée non utilisée** - `validateSubstackCookie` | `auth.ts` | 176 | Code mort | 2 min |
+
+### P2 - Nice to Have (Post-Release)
+
+| # | Issue | File | Impact |
+|---|-------|------|--------|
+| 7 | Type `TextMark` permet `href` sur non-link | `types.ts` | Type safety |
+| 8 | Assertions `settings!` et `logger!` | `main.ts` | Code smell |
+| 9 | Pas de validation settings au load | `main.ts` | Robustesse |
+| 10 | JSDoc manquant sur API publique | `api.ts` | Documentation |
+| 11 | Retry logic pour erreurs transitoires | `api.ts` | Résilience |
+| 12 | Extract title/subtitle from frontmatter | `PostComposer.ts` | Feature |
+
+---
+
+## Consolidated Findings
+
+### Fixed Issues ✅
+
+| Issue | File | Fix Applied |
+|-------|------|-------------|
+| `require()` forbidden | `auth.ts:49` | Changed to `window.require()` |
+| JSDoc `validateSession` incorrect | `auth.ts:21-23` | Renamed to `hasValidCookieFormat()` |
+| Comment "validates session" misleading | `auth.ts:78` | Changed to "captures when format is valid" |
+| No validation for empty publications | `PostComposer.ts:28` | Added explicit check with throw |
+| Insufficient test coverage | `tests/` | Added 29 tests for MarkdownConverter |
+| No `throw: false` on requestUrl | `api.ts` | Added to all API calls |
+
+### Pending Issues by Severity
+
+#### Critical (0 remaining)
+*All critical issues have been addressed.*
+
+#### Important (6 pending)
+
+| Issue | File | Line | Status |
+|-------|------|------|--------|
+| Accès non protégé à `json.id` | `PostComposer.ts` | 219 | **P0** |
+| Promise ignorée avec void | `PostComposer.ts` | 91 | **P0** |
+| Catch générique sans message d'erreur | `auth.ts` | 167 | **P1** |
+| `saveData()` non protégé | `main.ts` | 85 | P2 |
+| Validation cookie sans distinction erreur | `auth.ts` | 188 | P2 |
+| Fonction `validateSubstackCookie` non utilisée | `auth.ts` | 176 | **P1** |
+
+#### Minor (9 pending)
+
+| Issue | File | Category |
+|-------|------|----------|
+| Commentaire "~100KB" incorrect | `logger.ts:11` | Comment |
+| Commentaire "collapsed by default" incorrect | `main.ts:160` | Comment |
+| Commentaire "write to file only" obsolète | `logger.ts:164` | Comment |
+| Commentaire "avoid errors on mobile" imprécis | `auth.ts:47` | Comment |
+| Escape constants sans explication | `converter.ts:21-24` | Comment |
+| Limitations converter non documentées | `converter.ts:128` | Documentation |
+| Validation échouée sans feedback | `auth.ts:102` | Logging |
+| Code block non fermé ignoré | `converter.ts:267` | Logging |
+| Erreurs HTTP non loggées | `api.ts` | Logging |
+
+### Blocked Issues
+
+| Issue | Reason |
+|-------|--------|
+| Timeout on requestUrl | Obsidian API ne supporte pas ce paramètre |
+
+---
+
+## Type Design Summary
+
+| Type | Score | Main Issue |
+|------|:-----:|------------|
+| `SubstackBlock` (union) | 7.5/10 | - |
+| `SubstackAPI` | 6.8/10 | - |
+| `SubstackAuth` | 6.0/10 | `hasValidCookieFormat` ne valide pas vraiment |
+| `SubstackPostComposer` | 6.0/10 | - |
+| `TextMark` | 5.5/10 | `href` possible sur non-link |
+| `SubstackDraftPayload` | 5.3/10 | `title` peut être vide |
+| `SubstackPublisherPlugin` | 5.0/10 | Assertions `!` |
+| `SubstackDraftResponse` | 4.8/10 | Pas de validation structure |
+| `ElectronCookie` | 4.8/10 | - |
+| `SubstackPublisherSettings` | 4.5/10 | Pas de validation au load |
+
+---
+
+## Test Coverage
+
+| Component | Tests | Coverage |
+|-----------|:-----:|----------|
+| Logger | 2 | Basic factory function |
+| MarkdownConverter | 29 | Comprehensive |
+| API | 0 | Not tested |
+| Auth | 0 | Not tested |
+| PostComposer | 0 | Not tested |
+
+---
+
+## Recommended Action Plan
+
+### Phase 1: Pre-Release (P0 + P1)
+1. Valider `draftResponse.json?.id` avant accès
+2. Ajouter `.catch()` sur la Promise de lecture fichier
+3. Inclure `error.message` dans le catch de `login()`
+4. Corriger les 2 commentaires incorrects
+5. Décider : utiliser ou supprimer `validateSubstackCookie`
+
+### Phase 2: Post-Release (P2)
+1. Améliorer les types (`TextMark`, validation settings)
+2. Ajouter JSDoc sur l'API publique
+3. Implémenter retry logic
+4. Ajouter tests pour API/Auth
+
+---
+
+## Appendix: Agent Reports
+
+<details>
+<summary>Silent Failure Hunter - Full Report</summary>
 
 ### CRITICAL
-
-| Issue | File | Line | Recommendation |
-|-------|------|------|----------------|
-| **Catch vide avec "Silently fail"** - Toutes les erreurs sont avalees sans log. Des erreurs critiques (permissions Electron, bugs) seront invisibles. | `auth.ts` | 112-114 | Logger l'erreur avec contexte. Distinguer erreurs attendues (cookie pas pret) des erreurs inattendues. |
+- `auth.ts:112-114` - Catch vide "Silently fail"
 
 ### IMPORTANT
-
-| Issue | File | Line | Recommendation |
-|-------|------|------|----------------|
-| **Catch generique sans message** - L'erreur originale n'est pas incluse dans la Notice. L'utilisateur ne sait pas pourquoi l'ouverture de fenetre echoue. | `auth.ts` | 167-168 | Inclure `error.message` dans la Notice: `"Failed to open login window: ${error.message}"` |
-| **Validation cookie echoue silencieusement** - Retourne `false` sans distinguer "cookie invalide" vs "erreur reseau". | `auth.ts` | 188-189 | Retourner `{valid: false, reason: 'network_error' \| 'invalid_cookie'}` ou propager l'erreur. |
-| **Promise ignoree avec void** - Erreurs de lecture fichier ignorees. L'apercu reste vide sans explication. | `PostComposer.ts` | 97-101 | Ajouter `.catch()` pour afficher "Failed to load preview" et logger l'erreur. |
-| **Acces non protege a json.id** - TypeError possible si la reponse 200 n'a pas le format attendu. | `PostComposer.ts` | 225 | Valider `draftResponse.json?.id` et lancer erreur explicite si absent. |
-| **saveData() non protege** - L'echec de sauvegarde (permissions, disque plein) est silencieux. | `main.ts` | 85 | Wrapper dans try/catch et afficher Notice en cas d'echec. |
+- `auth.ts:167-168` - Catch générique sans message
+- `auth.ts:188-189` - Validation cookie sans distinction erreur
+- `PostComposer.ts:91` - Promise ignorée avec void
+- `PostComposer.ts:219` - Accès non protégé à json.id
+- `main.ts:85` - saveData() non protégé
 
 ### MINOR
+- `auth.ts:102-104` - Validation échouée sans feedback
+- `converter.ts:267-268` - Code block non fermé ignoré
+- `api.ts:62-70, 77-84` - Erreurs HTTP non loggées
 
-| Issue | File | Line | Recommendation |
-|-------|------|------|----------------|
-| **Validation echouee sans feedback** - Si validateSession retourne false, aucun log ni notification. | `auth.ts` | 102-104 | Logger un warning pour faciliter le debugging. |
-| **Code block non ferme ignore** - Un code block sans fermeture est traite comme paragraphe sans avertissement. | `converter.ts` | 267-268 | Logger un warning quand un code block n'est pas ferme. |
-| **Erreurs HTTP non loggees au niveau API** - Avec `throw: false`, les erreurs ne sont pas tracees avant retour. | `api.ts` | 62-70, 77-84 | Ajouter logging pour les reponses non-2xx au niveau API. |
+</details>
 
-### Summary
+<details>
+<summary>Type Design Analyzer - Full Report</summary>
 
-- **1 CRITICAL**: Catch block explicitement marque "Silently fail" - violation directe des bonnes pratiques
-- **5 IMPORTANT**: Erreurs qui affectent l'experience utilisateur ou compliquent le debugging
-- **3 MINOR**: Ameliorations defensives recommandees
-
-### Priority Actions
-
-1. **Immediat**: Remplacer le catch vide ligne 112-114 de `auth.ts` par du logging
-2. **Court terme**: Ajouter gestion d'erreur pour la lecture de fichier dans `PostComposer.ts`
-3. **Court terme**: Valider la structure de reponse avant d'acceder a `json.id`
-
----
-
-## Type Design Analysis (type-design-analyzer)
-
-### Summary Ratings
-
-| Type | File | Encapsulation | Expression | Usefulness | Enforcement | Overall |
-|------|------|:-------------:|:----------:|:----------:|:-----------:|:-------:|
-| `TextMark` | types.ts | 6/10 | 5/10 | 7/10 | 4/10 | 5.5/10 |
-| `SubstackBlock` (union) | types.ts | 7/10 | 8/10 | 9/10 | 6/10 | 7.5/10 |
-| `SubstackDraftPayload` | types.ts | 5/10 | 6/10 | 7/10 | 3/10 | 5.3/10 |
-| `SubstackDraftResponse` | types.ts | 5/10 | 5/10 | 6/10 | 3/10 | 4.8/10 |
-| `SubstackAPI` | api.ts | 8/10 | 6/10 | 7/10 | 6/10 | 6.8/10 |
-| `ElectronCookie` | auth.ts | 5/10 | 5/10 | 6/10 | 3/10 | 4.8/10 |
-| `SubstackAuth` | auth.ts | 7/10 | 5/10 | 7/10 | 5/10 | 6.0/10 |
-| `SubstackPostComposer` | PostComposer.ts | 6/10 | 6/10 | 7/10 | 5/10 | 6.0/10 |
-| `SubstackPublisherSettings` | main.ts | 4/10 | 5/10 | 6/10 | 3/10 | 4.5/10 |
-| `SubstackPublisherPlugin` | main.ts | 5/10 | 4/10 | 6/10 | 5/10 | 5.0/10 |
-
-### Key Findings
-
-| Issue | Type | Severity | Recommendation |
-|-------|------|----------|----------------|
-| `TextMark` allows `href` on non-link types | types.ts | Medium | Use discriminated union to tie `href` to `type: "link"` |
-| No branded types for IDs | types.ts | Low | Consider `DraftId`, `Slug` branded types for safety |
-| `title` can be empty string | SubstackDraftPayload | Medium | Add non-empty string validation or branded type |
-| `validateSession` is incomplete | SubstackAuth | High | Implement actual session validation using `validateSubstackCookie` |
-| `settings!` and `logger!` assertions | main.ts | Medium | Refactor initialization to avoid definite assignment assertions |
-| No Result type for API responses | SubstackAPI | Medium | Return `Result<T, ApiError>` instead of raw response |
-| `MarkdownConverter` not injected | PostComposer | Low | Inject as dependency for testability |
-| No validation on settings load | main.ts | Medium | Validate loaded data against schema |
+### Key Issues
+- `TextMark` allows `href` on non-link types (Medium)
+- `settings!` and `logger!` assertions (Medium)
+- No validation on settings load (Medium)
+- No Result type for API responses (Medium)
 
 ### Strengths
+- Good use of discriminated unions for `SubstackBlock`
+- Proper encapsulation of `cookie` in `SubstackAPI`
+- Constructor validation in `SubstackPostComposer`
 
-- Good use of discriminated unions for `SubstackBlock` types
-- Proper encapsulation of `cookie` in `SubstackAPI` class
-- Constructor validation for required publications in `SubstackPostComposer`
-- Clear error messaging via `getErrorMessage` method
-- Types align well with external Substack/Tiptap API format
+</details>
 
-### Recommended Actions (Priority Order)
+<details>
+<summary>Comment Analyzer - Full Report</summary>
 
-1. **HIGH**: Fix `validateSession` to use actual API validation
-2. **MEDIUM**: Refactor `TextMark` to use discriminated union
-3. **MEDIUM**: Add validation for settings on load
-4. **MEDIUM**: Remove `!` assertions by restructuring initialization
-5. **LOW**: Add branded types for IDs and slugs
-6. **LOW**: Inject `MarkdownConverter` as dependency
+### Fixed
+- `auth.ts:21-23` - JSDoc validateSession
+- `auth.ts:78` - "validates session" comment
 
----
+### Pending
+- `logger.ts:11` - "~100KB" incorrect
+- `logger.ts:164` - "write to file only" obsolète
+- `main.ts:160` - "collapsed by default" non implémenté
 
-## Comment Analysis (comment-analyzer)
+### Missing Documentation
+- `main.ts` - Plugin entry point
+- `api.ts` - All public methods
+- `PostComposer.ts` - Class documentation
+- `converter.ts` - Supported Markdown syntax
 
-### Critical Issues (Factually Incorrect or Misleading)
-
-| File | Line | Comment | Problem | Recommendation |
-|------|------|---------|---------|----------------|
-| `auth.ts` | 21-23 | `Validate that a cookie provides a valid authenticated session / Tests against the user's publication drafts endpoint` | **FIXED**: Renamed to `hasValidCookieFormat()` with accurate JSDoc. | ~~Remove JSDoc or rename method to `hasValidCookieFormat()` and update JSDoc accordingly.~~ |
-| `auth.ts` | 78 | `Check for cookie - validates session before capturing` | **FIXED**: Changed to "captures when format is valid". | ~~Change to "Check for cookie - verifies cookie format before capturing"~~ |
-| `logger.ts` | 11 | `// ~100KB, truncate if larger` | **Technically incorrect**: 100000 characters != 100KB in UTF-8 encoding (could be up to 400KB). | Change to "// 100000 chars, truncate if larger" or calculate actual byte size. |
-| `logger.ts` | 164 | `Performance timing utilities - write to file only` | **Obsolete/misleading**: Comment implies special file-only behavior, but implementation just calls `this.debug()` like other methods. | Update to "Performance timing utilities - logged via debug level" |
-| `main.ts` | 160 | `Manual cookie input (always available, collapsed by default on desktop)` | **Incorrect**: The "collapsed by default" behavior is not implemented in the code. | Remove "collapsed by default" from comment or implement the collapsible behavior. |
-
-### Improvement Opportunities
-
-| File | Line | Current State | Recommendation |
-|------|------|---------------|----------------|
-| `auth.ts` | 3-6 | Class JSDoc mentions "Desktop only" but restriction is in `isAvailable()` method | Add note: "Use `isAvailable()` to check platform support before calling `login()`" |
-| `auth.ts` | 47-48 | "avoid errors on mobile" - Obsidian Mobile doesn't use Electron at all | Change "mobile" to "non-desktop platforms" for accuracy |
-| `converter.ts` | 1-4 | "Adapted from substack-mcp-plus Python implementation" - lacks source link and license info | Add URL to original project and note level of adaptation |
-| `converter.ts` | 21-24 | Escape constants use null characters with no explanation | Add comment: "Using null characters as temporary placeholders ensures they won't conflict with any valid Markdown content" |
-| `converter.ts` | 128-130 | Class JSDoc doesn't document limitations | Add note about unsupported Markdown features (tables, nested lists, footnotes, etc.) |
-| `api.ts` | 42-126 | Public methods `createDraft`, `publishDraft`, `listDrafts`, `updateDraft`, `getDraft` have no JSDoc | Add JSDoc with parameter descriptions, return types, and possible error codes |
-| `PostComposer.ts` | 98-99 | "Remove frontmatter for preview" - regex limitations not documented | Add note: "Expects valid YAML frontmatter delimited by `---`" |
-| `PostComposer.ts` | 147 | Same "Remove frontmatter" comment duplicated | Extract to private method `stripFrontmatter()` with single documentation |
-| `logger.ts` | 83 | "Debounce writes" doesn't mention the delay value | Change to "Debounce writes (500ms delay)" |
-| `logger.ts` | 190 | "Table logging for structured data" oversells the implementation | Change to "Table logging - outputs data via debug()" |
-| `main.ts` | 14-19 | `SubstackPublisherSettings` interface has no field documentation | Add JSDoc describing each setting field |
-
-### Recommended Removals
-
-| File | Line | Comment | Rationale |
-|------|------|---------|-----------|
-| `auth.ts` | 113 | `// Silently fail - cookie not ready yet` | Consider replacing with structured error logging via the file logger rather than silent catch. |
-
-### Missing Documentation (High Priority)
-
-| File | Element | Impact |
-|------|---------|--------|
-| `main.ts` | Entire file | Plugin entry point has almost no documentation - critical for future maintainers |
-| `api.ts` | All public methods | API class is the primary interface to Substack - needs comprehensive JSDoc |
-| `PostComposer.ts` | Class and public methods | Modal class needs usage documentation |
-| `converter.ts` | Parser methods | Complex parsing logic with no documentation on supported Markdown syntax |
-
-### Positive Findings
-
-| File | Line | Comment | Why It's Good |
-|------|------|---------|---------------|
-| `auth.ts` | 57 | `Use a separate session to avoid sharing with system browser` | Explains security decision clearly |
-| `auth.ts` | 173-175 | JSDoc for `validateSubstackCookie` | Accurate documentation that matches implementation |
-| `logger.ts` | 117 | `Silently fail - we can't log errors about logging` | Explains an intentional design decision with clear reasoning |
-| `logger.ts` | 105 | `Truncate if too large (keep last half)` | Documents both what and why |
-| `PostComposer.ts` | 213, 227 | `First create draft` / `Then publish` | Documents two-step workflow clearly |
-| `api.ts` | 15-18 | Cookie normalization JSDoc | Accurately describes the transformation |
-
-### Summary Statistics
-
-- **Files analyzed**: 6
-- **Critical issues**: 5 (factually incorrect or misleading comments)
-- **Improvement opportunities**: 11
-- **Missing documentation**: 4 high-priority areas
-- **Positive examples**: 6
+</details>

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2025-11-26
+
+### Fixed
+- Add eslint-disable comment for Electron window.require (required for desktop plugins)
+- Add proper TypeScript interfaces for Electron types
+- Add session validation before use in auth flow
+- Remove unused requestUrl import
+- Remove exclamation marks from notice messages
+- Handle promises with void operator instead of async callbacks
+
 ## [1.0.2] - 2025-11-26
 
 ### Fixed
@@ -68,5 +78,7 @@ Built upon open-source projects:
 
 ---
 
-[1.0.1]: https://github.com/roomi-fields/obsidian-substack/releases/tag/1.0.1
-[1.0.0]: https://github.com/roomi-fields/obsidian-substack/releases/tag/1.0.0
+[1.0.3]: https://github.com/roomi-fields/obsidian-substack/releases/tag/v1.0.3
+[1.0.2]: https://github.com/roomi-fields/obsidian-substack/releases/tag/v1.0.2
+[1.0.1]: https://github.com/roomi-fields/obsidian-substack/releases/tag/v1.0.1
+[1.0.0]: https://github.com/roomi-fields/obsidian-substack/releases/tag/v1.0.0

@@ -6,7 +6,7 @@ import { ILogger } from "../utils/logger";
 import {
   SubstackAudience,
   SubstackSection,
-  SubstackFrontmatter,
+  SubstackFrontmatter
 } from "./types";
 
 export interface PostComposerDefaults {
@@ -41,7 +41,7 @@ export class SubstackPostComposer extends Modal {
     api: SubstackAPI,
     publications: string[],
     logger: ILogger,
-    defaults?: PostComposerDefaults,
+    defaults?: PostComposerDefaults
   ) {
     super(app);
     this.api = api;
@@ -54,7 +54,7 @@ export class SubstackPostComposer extends Modal {
       defaultSectionId: null,
       defaultAudience: "everyone",
       defaultTags: [],
-      paidSubscribersEnabled: false,
+      paidSubscribersEnabled: false
     };
 
     // Apply defaults
@@ -82,13 +82,13 @@ export class SubstackPostComposer extends Modal {
     // Publication selector (hidden if only one publication)
     if (this.publications.length > 1) {
       const pubContainer = contentEl.createDiv({
-        cls: "substack-field-container",
+        cls: "substack-field-container"
       });
 
       pubContainer.createEl("label", { text: "Publication" });
 
       const pubSelect = pubContainer.createEl("select", {
-        cls: "substack-select",
+        cls: "substack-select"
       });
 
       for (const pub of this.publications) {
@@ -107,19 +107,19 @@ export class SubstackPostComposer extends Modal {
 
     // Section selector (right after publication, will be populated async)
     const sectionContainer = contentEl.createDiv({
-      cls: "substack-field-container substack-section-container",
+      cls: "substack-field-container substack-section-container"
     });
     sectionContainer.style.display = "none"; // Hidden until sections loaded
 
     // Title input
     const titleContainer = contentEl.createDiv({
-      cls: "substack-field-container",
+      cls: "substack-field-container"
     });
     titleContainer.createEl("label", { text: "Title" });
     const titleInput = titleContainer.createEl("input", {
       type: "text",
       placeholder: "Post title",
-      cls: "substack-input",
+      cls: "substack-input"
     });
 
     // Pre-fill with frontmatter or file name
@@ -136,13 +136,13 @@ export class SubstackPostComposer extends Modal {
 
     // Subtitle input
     const subtitleContainer = contentEl.createDiv({
-      cls: "substack-field-container",
+      cls: "substack-field-container"
     });
     subtitleContainer.createEl("label", { text: "Subtitle" });
     const subtitleInput = subtitleContainer.createEl("input", {
       type: "text",
       placeholder: "Post subtitle",
-      cls: "substack-input",
+      cls: "substack-input"
     });
 
     // Pre-fill with frontmatter
@@ -158,18 +158,18 @@ export class SubstackPostComposer extends Modal {
     // Audience selector - only show if paid subscribers enabled
     if (this.defaults.paidSubscribersEnabled) {
       const audienceContainer = contentEl.createDiv({
-        cls: "substack-field-container",
+        cls: "substack-field-container"
       });
       audienceContainer.createEl("label", { text: "Audience" });
       const audienceSelect = audienceContainer.createEl("select", {
-        cls: "substack-select",
+        cls: "substack-select"
       });
 
       const audienceOptions: { value: SubstackAudience; label: string }[] = [
         { value: "everyone", label: "Everyone" },
         { value: "only_paid", label: "Paid subscribers only" },
         { value: "founding", label: "Founding members only" },
-        { value: "only_free", label: "Free subscribers only" },
+        { value: "only_free", label: "Free subscribers only" }
       ];
 
       // Determine effective audience: frontmatter > defaults
@@ -179,13 +179,13 @@ export class SubstackPostComposer extends Modal {
       this.logger.debug("Audience selection", {
         frontmatterAudience: this.frontmatter.audience,
         defaultAudience: this.defaults.defaultAudience,
-        effectiveAudience,
+        effectiveAudience
       });
 
       for (const opt of audienceOptions) {
         const option = audienceSelect.createEl("option", {
           text: opt.label,
-          value: opt.value,
+          value: opt.value
         });
         if (opt.value === effectiveAudience) {
           option.selected = true;
@@ -202,13 +202,13 @@ export class SubstackPostComposer extends Modal {
 
     // Tags input
     const tagsContainer = contentEl.createDiv({
-      cls: "substack-field-container",
+      cls: "substack-field-container"
     });
     tagsContainer.createEl("label", { text: "Tags" });
     const tagsInput = tagsContainer.createEl("input", {
       type: "text",
       placeholder: "tag1, tag2, tag3",
-      cls: "substack-input",
+      cls: "substack-input"
     });
 
     // Pre-fill with frontmatter or defaults
@@ -229,11 +229,11 @@ export class SubstackPostComposer extends Modal {
 
     // Content preview
     const previewContainer = contentEl.createDiv({
-      cls: "substack-preview-container",
+      cls: "substack-preview-container"
     });
     previewContainer.createEl("label", { text: "Preview" });
     const preview = previewContainer.createEl("div", {
-      cls: "substack-preview",
+      cls: "substack-preview"
     });
 
     if (this.activeFile) {
@@ -255,13 +255,13 @@ export class SubstackPostComposer extends Modal {
 
     // Buttons
     const buttonContainer = contentEl.createDiv({
-      cls: "substack-button-container",
+      cls: "substack-button-container"
     });
 
     buttonContainer
       .createEl("button", {
         text: "Cancel",
-        cls: "substack-cancel-button",
+        cls: "substack-cancel-button"
       })
       .addEventListener("click", () => {
         this.close();
@@ -269,7 +269,7 @@ export class SubstackPostComposer extends Modal {
 
     this.draftButton = buttonContainer.createEl("button", {
       text: "Save as draft",
-      cls: "substack-draft-button",
+      cls: "substack-draft-button"
     });
     this.draftButton.addEventListener("click", () => {
       void this.saveDraft();
@@ -277,7 +277,7 @@ export class SubstackPostComposer extends Modal {
 
     this.publishButton = buttonContainer.createEl("button", {
       text: "Publish",
-      cls: "substack-publish-button",
+      cls: "substack-publish-button"
     });
     this.publishButton.addEventListener("click", () => {
       void this.publish();
@@ -286,7 +286,7 @@ export class SubstackPostComposer extends Modal {
     // Note
     contentEl.createEl("div", {
       text: "The active note will be converted and published.",
-      cls: "substack-note-text",
+      cls: "substack-note-text"
     });
 
     // Load sections async
@@ -331,7 +331,7 @@ export class SubstackPostComposer extends Modal {
       this.sections = await this.api.getSections(this.selectedPublication);
 
       const sectionContainer = contentEl.querySelector(
-        ".substack-section-container",
+        ".substack-section-container"
       ) as HTMLElement;
       if (!sectionContainer) return;
 
@@ -352,7 +352,7 @@ export class SubstackPostComposer extends Modal {
 
       sectionContainer.createEl("label", { text: "Section" });
       const sectionSelect = sectionContainer.createEl("select", {
-        cls: "substack-select",
+        cls: "substack-select"
       });
 
       // Determine which section to select:
@@ -366,7 +366,7 @@ export class SubstackPostComposer extends Modal {
         const fmSection = liveSections.find(
           (s) =>
             s.name.toLowerCase() === this.frontmatter.section?.toLowerCase() ||
-            s.slug === this.frontmatter.section,
+            s.slug === this.frontmatter.section
         );
         if (fmSection) {
           selectedId = fmSection.id;
@@ -376,7 +376,7 @@ export class SubstackPostComposer extends Modal {
       // Fall back to default from settings
       if (selectedId === null && this.defaults.defaultSectionId !== null) {
         const defaultSection = liveSections.find(
-          (s) => s.id === this.defaults.defaultSectionId,
+          (s) => s.id === this.defaults.defaultSectionId
         );
         if (defaultSection) {
           selectedId = defaultSection.id;
@@ -393,7 +393,7 @@ export class SubstackPostComposer extends Modal {
       for (const section of liveSections) {
         const option = sectionSelect.createEl("option", {
           text: section.name,
-          value: section.id.toString(),
+          value: section.id.toString()
         });
 
         if (section.id === selectedId) {
@@ -426,20 +426,20 @@ export class SubstackPostComposer extends Modal {
     const imageResult = await this.imageHandler.processMarkdownImages(
       this.selectedPublication,
       cleanContent,
-      basePath,
+      basePath
     );
 
     // Notify user of image upload results
     if (imageResult.uploadedImages.length > 0) {
       this.logger.info(
-        `Uploaded ${imageResult.uploadedImages.length} image(s) to Substack`,
+        `Uploaded ${imageResult.uploadedImages.length} image(s) to Substack`
       );
     }
 
     if (imageResult.errors.length > 0) {
       const errorCount = imageResult.errors.length;
       new Notice(
-        `Warning: ${errorCount} image(s) failed to upload. Check dev console for details.`,
+        `Warning: ${errorCount} image(s) failed to upload. Check dev console for details.`
       );
       for (const err of imageResult.errors) {
         this.logger.warn(`Image upload failed: ${err.path} - ${err.error}`);
@@ -466,7 +466,7 @@ export class SubstackPostComposer extends Modal {
         title: this.title,
         audience: this.audience,
         tags: this.tags,
-        sectionId: this.selectedSectionId,
+        sectionId: this.selectedSectionId
       });
 
       // Convert markdown to Substack JSON format
@@ -478,7 +478,7 @@ export class SubstackPostComposer extends Modal {
         body,
         this.subtitle,
         this.audience,
-        this.tags.length > 0 ? this.tags : undefined,
+        this.tags.length > 0 ? this.tags : undefined
       );
 
       if (response.status === 200 || response.status === 201) {
@@ -489,7 +489,7 @@ export class SubstackPostComposer extends Modal {
           await this.api.updateDraftSection(
             this.selectedPublication,
             draftId,
-            this.selectedSectionId,
+            this.selectedSectionId
           );
         }
 
@@ -525,7 +525,7 @@ export class SubstackPostComposer extends Modal {
         title: this.title,
         audience: this.audience,
         tags: this.tags,
-        sectionId: this.selectedSectionId,
+        sectionId: this.selectedSectionId
       });
 
       // Convert markdown to Substack JSON format
@@ -538,7 +538,7 @@ export class SubstackPostComposer extends Modal {
         body,
         this.subtitle,
         this.audience,
-        this.tags.length > 0 ? this.tags : undefined,
+        this.tags.length > 0 ? this.tags : undefined
       );
 
       if (draftResponse.status !== 200 && draftResponse.status !== 201) {
@@ -555,14 +555,14 @@ export class SubstackPostComposer extends Modal {
         await this.api.updateDraftSection(
           this.selectedPublication,
           draftId,
-          this.selectedSectionId,
+          this.selectedSectionId
         );
       }
 
       // Then publish
       const publishResponse = await this.api.publishDraft(
         this.selectedPublication,
-        draftId,
+        draftId
       );
 
       if (publishResponse.status === 200 || publishResponse.status === 201) {
@@ -571,7 +571,7 @@ export class SubstackPostComposer extends Modal {
         this.close();
       } else {
         throw new Error(
-          this.getErrorMessage(publishResponse.status, "publish"),
+          this.getErrorMessage(publishResponse.status, "publish")
         );
       }
     } catch (error) {
@@ -585,22 +585,22 @@ export class SubstackPostComposer extends Modal {
 
   private getErrorMessage(
     status: number,
-    action: string = "create draft",
+    action: string = "create draft"
   ): string {
     switch (status) {
-      case 401:
-      case 403:
-        return "Session expired or invalid. Please login again in Settings.";
-      case 404:
-        return "Publication not found. Check your publication name in Settings.";
-      case 429:
-        return "Too many requests. Please wait a moment and try again.";
-      case 500:
-      case 502:
-      case 503:
-        return "Substack is temporarily unavailable. Please try again later.";
-      default:
-        return `Failed to ${action} (error ${status})`;
+    case 401:
+    case 403:
+      return "Session expired or invalid. Please login again in Settings.";
+    case 404:
+      return "Publication not found. Check your publication name in Settings.";
+    case 429:
+      return "Too many requests. Please wait a moment and try again.";
+    case 500:
+    case 502:
+    case 503:
+      return "Substack is temporarily unavailable. Please try again later.";
+    default:
+      return `Failed to ${action} (error ${status})`;
     }
   }
 

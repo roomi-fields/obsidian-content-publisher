@@ -81,7 +81,7 @@ class NoOpLogger implements ILogger {
   logSettingsChange(
     _setting: string,
     _oldValue: unknown,
-    _newValue: unknown,
+    _newValue: unknown
   ): void {
     /* no-op */
   }
@@ -101,7 +101,7 @@ export class Logger implements ILogger {
   constructor(
     name: string,
     devMode: boolean = false,
-    logLevel: LogLevel = LogLevel.INFO,
+    logLevel: LogLevel = LogLevel.INFO
   ) {
     this.name = name;
     this.devMode = devMode;
@@ -213,7 +213,7 @@ export class Logger implements ILogger {
           errorData = {
             message: error.message,
             stack: error.stack,
-            name: error.name,
+            name: error.name
           };
         } else {
           errorData = error;
@@ -282,7 +282,7 @@ export class Logger implements ILogger {
   logSettingsChange(
     setting: string,
     oldValue: unknown,
-    newValue: unknown,
+    newValue: unknown
   ): void {
     this.debug(`Setting changed: ${setting}`, { from: oldValue, to: newValue });
   }
@@ -292,7 +292,7 @@ export class Logger implements ILogger {
 export function createLogger(
   name: string,
   devMode: boolean = false,
-  logLevel: LogLevel = LogLevel.ERROR,
+  logLevel: LogLevel = LogLevel.ERROR
 ): ILogger {
   return devMode ? new Logger(name, devMode, logLevel) : new NoOpLogger();
 }

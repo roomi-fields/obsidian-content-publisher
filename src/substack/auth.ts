@@ -89,7 +89,7 @@ export class SubstackAuth {
   login(): void {
     if (!this.isAvailable()) {
       new Notice(
-        "Auto-login is only available on desktop. Please copy your cookie manually.",
+        "Auto-login is only available on desktop. Please copy your cookie manually."
       );
       return;
     }
@@ -102,7 +102,7 @@ export class SubstackAuth {
 
       if (!BrowserWindow) {
         new Notice(
-          "Cannot access browser window. Please copy your cookie manually.",
+          "Cannot access browser window. Please copy your cookie manually."
         );
         return;
       }
@@ -123,8 +123,8 @@ export class SubstackAuth {
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
-          session: authSession,
-        },
+          session: authSession
+        }
       });
 
       // Hide menu bar
@@ -140,12 +140,12 @@ export class SubstackAuth {
           // Get ALL substack cookies from this window's session
           const allCookies: ElectronCookie[] =
             await authWindow.webContents.session.cookies.get({
-              domain: ".substack.com",
+              domain: ".substack.com"
             });
 
           // Find the sid cookie
           const sidCookie = allCookies.find(
-            (c: ElectronCookie) => c.name === "substack.sid",
+            (c: ElectronCookie) => c.name === "substack.sid"
           );
 
           if (sidCookie && sidCookie.value) {
@@ -153,7 +153,7 @@ export class SubstackAuth {
             const relevantCookies = allCookies
               .filter(
                 (c: ElectronCookie) =>
-                  c.name.startsWith("substack") || c.name === "connect.sid",
+                  c.name.startsWith("substack") || c.name === "connect.sid"
               )
               .map((c: ElectronCookie) => `${c.name}=${c.value}`)
               .join("; ");
@@ -202,14 +202,14 @@ export class SubstackAuth {
         "did-navigate",
         (_event: unknown, url: string) => {
           checkIfAuthenticated(url);
-        },
+        }
       );
 
       authWindow.webContents.on(
         "did-navigate-in-page",
         (_event: unknown, url: string) => {
           checkIfAuthenticated(url);
-        },
+        }
       );
 
       // Also check periodically as fallback
@@ -232,7 +232,7 @@ export class SubstackAuth {
         clearInterval(intervalId);
         if (!cookieCaptured) {
           new Notice(
-            "Login window closed. Cookie was not captured - please try again.",
+            "Login window closed. Cookie was not captured - please try again."
           );
         }
       });
@@ -242,7 +242,7 @@ export class SubstackAuth {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       new Notice(
-        `Failed to open login window: ${message}. Please copy your cookie manually.`,
+        `Failed to open login window: ${message}. Please copy your cookie manually.`
       );
     }
   }

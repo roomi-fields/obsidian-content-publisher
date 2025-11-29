@@ -4,7 +4,7 @@ import {
   SubstackDraftPayload,
   SubstackSection,
   SubstackAudience,
-  ImageUploadResult,
+  ImageUploadResult
 } from "./types";
 
 export class SubstackAPI {
@@ -37,7 +37,7 @@ export class SubstackAPI {
   private getHeaders(): Record<string, string> {
     return {
       "Content-Type": "application/json",
-      Cookie: this.cookie,
+      Cookie: this.cookie
     };
   }
 
@@ -55,12 +55,12 @@ export class SubstackAPI {
    */
   async getUserPublicationsWithInfo(): Promise<
     Array<{ subdomain: string; hasPaidSubscriptions: boolean }>
-  > {
+    > {
     const response = await requestUrl({
       url: "https://substack.com/api/v1/user/profile/self",
       method: "GET",
       headers: this.getHeaders(),
-      throw: false,
+      throw: false
     });
 
     if (response.status >= 200 && response.status < 300 && response.json) {
@@ -85,7 +85,7 @@ export class SubstackAPI {
             hasPaidSubscriptions: !!(
               pu.publication?.stripe_publishable_key ||
               pu.publication?.has_subscriber_only_content
-            ),
+            )
           }))
           .filter((p) => p.subdomain !== "");
       }
@@ -100,7 +100,7 @@ export class SubstackAPI {
     body: SubstackDocument,
     subtitle?: string,
     audience: SubstackAudience = "everyone",
-    tags?: string[],
+    tags?: string[]
   ): Promise<RequestUrlResponse> {
     const payload: Record<string, unknown> = {
       draft_title: title,
@@ -110,7 +110,7 @@ export class SubstackAPI {
       audience,
       type: "newsletter",
       section_chosen: false,
-      write_comment_permissions: "everyone",
+      write_comment_permissions: "everyone"
     };
 
     // Add tags if provided
@@ -125,7 +125,7 @@ export class SubstackAPI {
       method: "POST",
       headers: this.getHeaders(),
       body: JSON.stringify(payload),
-      throw: false,
+      throw: false
     });
 
     return response;
@@ -139,7 +139,7 @@ export class SubstackAPI {
       url: `https://${publication}.substack.com/api/v1/publication/sections`,
       method: "GET",
       headers: this.getHeaders(),
-      throw: false,
+      throw: false
     });
 
     if (response.status >= 200 && response.status < 300 && response.json) {
@@ -164,23 +164,23 @@ export class SubstackAPI {
   async updateDraftSection(
     publication: string,
     draftId: string,
-    sectionId: number,
+    sectionId: number
   ): Promise<RequestUrlResponse> {
     return this.updateDraft(publication, draftId, {
       draft_section_id: sectionId,
-      section_chosen: true,
+      section_chosen: true
     } as unknown as Partial<SubstackDraftPayload>);
   }
 
   async publishDraft(
     publication: string,
-    draftId: string,
+    draftId: string
   ): Promise<RequestUrlResponse> {
     const response = await requestUrl({
       url: `${this.getBaseUrl(publication)}/drafts/${draftId}/publish`,
       method: "POST",
       headers: this.getHeaders(),
-      throw: false,
+      throw: false
     });
 
     return response;
@@ -191,7 +191,7 @@ export class SubstackAPI {
       url: `${this.getBaseUrl(publication)}/drafts`,
       method: "GET",
       headers: this.getHeaders(),
-      throw: false,
+      throw: false
     });
 
     return response;
@@ -200,14 +200,14 @@ export class SubstackAPI {
   async updateDraft(
     publication: string,
     draftId: string,
-    updates: Partial<SubstackDraftPayload>,
+    updates: Partial<SubstackDraftPayload>
   ): Promise<RequestUrlResponse> {
     const response = await requestUrl({
       url: `${this.getBaseUrl(publication)}/drafts/${draftId}`,
       method: "PUT",
       headers: this.getHeaders(),
       body: JSON.stringify(updates),
-      throw: false,
+      throw: false
     });
 
     return response;
@@ -215,13 +215,13 @@ export class SubstackAPI {
 
   async getDraft(
     publication: string,
-    draftId: string,
+    draftId: string
   ): Promise<RequestUrlResponse> {
     const response = await requestUrl({
       url: `${this.getBaseUrl(publication)}/drafts/${draftId}`,
       method: "GET",
       headers: this.getHeaders(),
-      throw: false,
+      throw: false
     });
 
     return response;
@@ -243,7 +243,7 @@ export class SubstackAPI {
     publication: string,
     imageData: ArrayBuffer,
     filename: string,
-    mimeType: string,
+    mimeType: string
   ): Promise<{ success: boolean; data?: ImageUploadResult; error?: string }> {
     // Convert ArrayBuffer to base64 data URI
     const uint8Array = new Uint8Array(imageData);
@@ -260,22 +260,22 @@ export class SubstackAPI {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        Cookie: this.cookie,
+        Cookie: this.cookie
       },
       body: `image=${encodeURIComponent(dataUri)}`,
-      throw: false,
+      throw: false
     });
 
     if (response.status >= 200 && response.status < 300) {
       return {
         success: true,
-        data: response.json as ImageUploadResult,
+        data: response.json as ImageUploadResult
       };
     }
 
     return {
       success: false,
-      error: `Upload failed: ${response.status} - ${response.text || "Unknown error"}`,
+      error: `Upload failed: ${response.status} - ${response.text || "Unknown error"}`
     };
   }
 }
@@ -288,5 +288,5 @@ export type {
   SubstackSection,
   SubstackAudience,
   SubstackFrontmatter,
-  ImageUploadResult,
+  ImageUploadResult
 } from "./types";

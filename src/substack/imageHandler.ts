@@ -13,7 +13,7 @@ const MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   gif: "image/gif",
-  webp: "image/webp",
+  webp: "image/webp"
 };
 
 /**
@@ -46,7 +46,7 @@ export class ImageHandler {
           fullMatch: match[0],
           alt: match[1] ?? "",
           path,
-          isLocal: this.isLocalPath(path),
+          isLocal: this.isLocalPath(path)
         };
         // Only add title if it exists
         if (match[3]) {
@@ -123,7 +123,7 @@ export class ImageHandler {
    */
   async uploadImage(
     publication: string,
-    vaultPath: string,
+    vaultPath: string
   ): Promise<{ success: boolean; url?: string; error?: string }> {
     // Get file from vault
     const file = this.vault.getAbstractFileByPath(vaultPath);
@@ -137,7 +137,7 @@ export class ImageHandler {
     if (!this.isSupportedFormat(extension)) {
       return {
         success: false,
-        error: `Unsupported format: ${extension}. Supported: ${SUPPORTED_EXTENSIONS.join(", ")}`,
+        error: `Unsupported format: ${extension}. Supported: ${SUPPORTED_EXTENSIONS.join(", ")}`
       };
     }
 
@@ -145,7 +145,7 @@ export class ImageHandler {
     if (file.stat.size > MAX_FILE_SIZE) {
       return {
         success: false,
-        error: `File too large: ${(file.stat.size / 1024 / 1024).toFixed(1)} MB (max: 10 MB)`,
+        error: `File too large: ${(file.stat.size / 1024 / 1024).toFixed(1)} MB (max: 10 MB)`
       };
     }
 
@@ -160,7 +160,7 @@ export class ImageHandler {
       publication,
       imageData,
       file.name,
-      mimeType,
+      mimeType
     );
 
     if (result.success && result.data) {
@@ -177,7 +177,7 @@ export class ImageHandler {
   async processMarkdownImages(
     publication: string,
     markdown: string,
-    basePath: string,
+    basePath: string
   ): Promise<ImageProcessingResult> {
     const references = this.parseImageReferences(markdown);
     const localImages = references.filter((ref) => ref.isLocal);
@@ -203,23 +203,23 @@ export class ImageHandler {
 
         processedMarkdown = processedMarkdown.replace(
           ref.fullMatch,
-          newImageMarkdown,
+          newImageMarkdown
         );
 
         uploadedImages.push({
           originalPath: ref.path,
-          cdnUrl: result.url,
+          cdnUrl: result.url
         });
 
         this.logger.info(`Uploaded image: ${ref.path} -> ${result.url}`);
       } else {
         errors.push({
           path: ref.path,
-          error: result.error || "Unknown error",
+          error: result.error || "Unknown error"
         });
 
         this.logger.warn(
-          `Failed to upload image: ${ref.path} - ${result.error}`,
+          `Failed to upload image: ${ref.path} - ${result.error}`
         );
       }
     }
@@ -227,7 +227,7 @@ export class ImageHandler {
     return {
       processedMarkdown,
       uploadedImages,
-      errors,
+      errors
     };
   }
 }

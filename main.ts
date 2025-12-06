@@ -72,7 +72,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     await this.loadSettings();
 
     this.logger = createLogger(
-      "Substack Publisher",
+      "Content Publisher",
       this.settings.devMode,
       this.settings.logLevel,
     );
@@ -172,7 +172,7 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     if (this.logger) {
       this.logger = createLogger(
-        "Substack Publisher",
+        "Content Publisher",
         this.settings.devMode,
         this.settings.logLevel,
       );
@@ -184,7 +184,7 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     if (this.logger) {
       this.logger = createLogger(
-        "Substack Publisher",
+        "Content Publisher",
         this.settings.devMode,
         this.settings.logLevel,
       );
@@ -737,7 +737,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
     });
 
     versionContent.createEl("p", {
-      text: "Substack publisher",
+      text: "Content Publisher",
       attr: { class: "substack-version-name" },
     });
 

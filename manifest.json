@@ -1,9 +1,9 @@
 {
-  "id": "substack-publisher",
-  "name": "Substack Publisher",
-  "version": "1.2.0",
+  "id": "content-publisher",
+  "name": "Content Publisher",
+  "version": "2.0.0",
   "minAppVersion": "1.0.0",
-  "description": "Publish your notes directly to Substack as drafts or published posts.",
+  "description": "Publish your Obsidian notes to multiple platforms: Substack, WordPress, and more.",
   "author": "Romain Peyrichou",
   "authorUrl": "https://github.com/roomi-fields",
   "fundingUrl": "",

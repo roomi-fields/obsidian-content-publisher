@@ -1,7 +1,7 @@
 {
-  "name": "substack-publisher",
-  "version": "1.2.0",
-  "description": "Publish your notes directly to Substack as drafts or published posts.",
+  "name": "obsidian-content-publisher",
+  "version": "2.0.0",
+  "description": "Publish your Obsidian notes to multiple platforms: Substack, WordPress, and more.",
   "main": "main.js",
   "type": "module",
   "scripts": {
@@ -21,8 +21,10 @@
     "obsidian",
     "obsidian-plugin",
     "substack",
-    "newsletter",
+    "wordpress",
     "publishing",
+    "content",
+    "cross-posting",
     "markdown"
   ],
   "author": "Romain Peyrichou",
@@ -51,10 +53,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/roomi-fields/obsidian-substack"
+    "url": "https://github.com/roomi-fields/obsidian-content-publisher"
   },
   "bugs": {
-    "url": "https://github.com/roomi-fields/obsidian-substack/issues"
+    "url": "https://github.com/roomi-fields/obsidian-content-publisher/issues"
   },
-  "homepage": "https://github.com/roomi-fields/obsidian-substack#readme"
+  "homepage": "https://github.com/roomi-fields/obsidian-content-publisher#readme"
 }

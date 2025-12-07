@@ -106,6 +106,23 @@ export interface PaywallBlock {
   type: "paywall";
 }
 
+// Captioned image block (for images with captions)
+export interface CaptionedImageBlock {
+  type: "captionedImage";
+  attrs: {
+    src: string;
+    fullscreen?: boolean;
+    imageSize?: "normal" | "inset" | "full";
+    height?: number;
+    width?: number;
+    resizeWidth?: number;
+    bytes?: number;
+    alt?: string;
+    title?: string;
+  };
+  content?: ParagraphBlock[];
+}
+
 // Union of all block types
 export type SubstackBlock =
   | ParagraphBlock
@@ -115,6 +132,7 @@ export type SubstackBlock =
   | CodeBlock
   | BlockquoteBlock
   | ImageBlock
+  | CaptionedImageBlock
   | HorizontalRuleBlock
   | PaywallBlock;
 
@@ -153,9 +171,13 @@ export interface SubstackSection {
 export interface SubstackFrontmatter {
   title?: string;
   subtitle?: string;
+  excerpt?: string;
   audience?: SubstackAudience;
   tags?: string[];
   section?: string;
+  substack_url?: string;
+  substack_draft_id?: string;
+  wordpress_url?: string;
 }
 
 // API response types
@@ -191,8 +213,15 @@ export interface ImageReference {
   fullMatch: string;
   alt: string;
   path: string;
-  title?: string;
+  title?: string | undefined;
   isLocal: boolean;
+  isWikiLink?: boolean | undefined;
+  wikiLinkSize?: number | undefined;
+}
+
+export interface EnluminureInfo {
+  imageRef: ImageReference;
+  lineIndex: number;
 }
 
 export interface ImageProcessingResult {
@@ -205,4 +234,8 @@ export interface ImageProcessingResult {
     path: string;
     error: string;
   }>;
+  enluminure?: {
+    cdnUrl: string;
+    size?: number | undefined;
+  } | undefined;
 }

@@ -1,6 +1,10 @@
 import { TFile, Vault } from "obsidian";
 import { SubstackAPI } from "./api";
-import { ImageReference, ImageProcessingResult } from "./types";
+import {
+  ImageReference,
+  ImageProcessingResult,
+  EnluminureInfo
+} from "./types";
 import { ILogger } from "../utils/logger";
 
 // Supported image formats
@@ -32,14 +36,15 @@ export class ImageHandler {
 
   /**
    * Parse all image references from markdown content
-   * Matches: ![alt](path) or ![alt](path "title")
+   * Matches: ![alt](path) or ![alt](path "title") or ![[path]] or ![[path|size]]
    */
   parseImageReferences(markdown: string): ImageReference[] {
-    const imageRegex = /!\[([^\]]*)\]\(([^\s)]+)(?:\s+"([^"]+)")?\)/g;
     const references: ImageReference[] = [];
 
+    // Standard markdown image syntax: ![alt](path) or ![alt](path "title")
+    const standardRegex = /!\[([^\]]*)\]\(([^\s)]+)(?:\s+"([^"]+)")?\)/g;
     let match;
-    while ((match = imageRegex.exec(markdown)) !== null) {
+    while ((match = standardRegex.exec(markdown)) !== null) {
       const path = match[2] ?? "";
       if (path) {
         const ref: ImageReference = {
@@ -48,7 +53,6 @@ export class ImageHandler {
           path,
           isLocal: this.isLocalPath(path)
         };
-        // Only add title if it exists
         if (match[3]) {
           ref.title = match[3];
         }
@@ -56,7 +60,93 @@ export class ImageHandler {
       }
     }
 
+    // Obsidian wikilink image syntax: ![[path]] or ![[path|size]] or ![[path|alt]]
+    const wikiLinkRegex = /!\[\[([^\]|]+)(?:\|([^\]]*))?\]\]/g;
+    while ((match = wikiLinkRegex.exec(markdown)) !== null) {
+      const path = match[1] ?? "";
+      if (path) {
+        const sizeOrAlt = match[2] ?? "";
+        // If it's a number, it's a size; otherwise it's alt text
+        const isSize = /^\d+$/.test(sizeOrAlt);
+        const ref: ImageReference = {
+          fullMatch: match[0],
+          alt: isSize ? "" : sizeOrAlt,
+          path,
+          isLocal: true, // Wikilinks are always local
+          isWikiLink: true,
+          wikiLinkSize: isSize ? parseInt(sizeOrAlt, 10) : undefined
+        };
+        references.push(ref);
+      }
+    }
+
     return references;
+  }
+
+  /**
+   * Detect and extract enluminure information from markdown
+   * Returns the enluminure image reference if found at the start of content
+   * Note: Enluminures are detected so they can be REMOVED from Substack output
+   * (Substack doesn't support float/wrap text around images)
+   */
+  detectEnluminure(markdown: string): EnluminureInfo | null {
+    // Look for enluminure pattern at the beginning of the content (after frontmatter)
+    const lines = markdown.split("\n");
+    let foundEnluminure: ImageReference | null = null;
+    let lineIndex = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]?.trim() ?? "";
+
+      // Skip empty lines
+      if (!line) continue;
+
+      // Check for wikilink enluminure: ![[...enluminure...]]
+      const wikiMatch = line.match(/^!\[\[([^\]|]*enluminure[^\]|]*)(?:\|([^\]]*))?\]\]$/i);
+      if (wikiMatch) {
+        const path = wikiMatch[1] ?? "";
+        const sizeOrAlt = wikiMatch[2] ?? "";
+        const isSize = /^\d+$/.test(sizeOrAlt);
+        foundEnluminure = {
+          fullMatch: wikiMatch[0],
+          alt: isSize ? "" : sizeOrAlt,
+          path,
+          isLocal: true,
+          isWikiLink: true,
+          wikiLinkSize: isSize ? parseInt(sizeOrAlt, 10) : undefined
+        };
+        lineIndex = i;
+        break;
+      }
+
+      // Check for standard markdown enluminure: ![...](path/enluminure...)
+      const stdMatch = line.match(/^!\[([^\]]*)\]\(([^\s)]*enluminure[^\s)]*)(?:\s+"([^"]+)")?\)$/i);
+      if (stdMatch) {
+        foundEnluminure = {
+          fullMatch: stdMatch[0],
+          alt: stdMatch[1] ?? "",
+          path: stdMatch[2] ?? "",
+          isLocal: this.isLocalPath(stdMatch[2] ?? ""),
+          title: stdMatch[3]
+        };
+        lineIndex = i;
+        break;
+      }
+
+      // If we hit a non-empty, non-image line, stop looking
+      if (!line.startsWith("!")) {
+        break;
+      }
+    }
+
+    if (!foundEnluminure || lineIndex === -1) {
+      return null;
+    }
+
+    return {
+      imageRef: foundEnluminure,
+      lineIndex
+    };
   }
 
   /**
@@ -171,8 +261,22 @@ export class ImageHandler {
   }
 
   /**
+   * Resolve wikilink path to vault path
+   * Obsidian wikilinks are relative to vault root, not to the current file
+   */
+  resolveWikiLinkPath(wikiPath: string, _basePath: string): string {
+    // Wikilinks in Obsidian are always relative to vault root
+    // So we just return the path as-is (removing any leading /)
+    if (wikiPath.startsWith("/")) {
+      return wikiPath.substring(1);
+    }
+    return wikiPath;
+  }
+
+  /**
    * Process all images in markdown content
    * Uploads local images to Substack CDN and replaces paths
+   * Detects and handles enluminure images specially
    */
   async processMarkdownImages(
     publication: string,
@@ -186,10 +290,35 @@ export class ImageHandler {
     const errors: ImageProcessingResult["errors"] = [];
 
     let processedMarkdown = markdown;
+    let enluminureResult: ImageProcessingResult["enluminure"] = undefined;
+
+    // Detect enluminure first - these will be SKIPPED (not uploaded to Substack)
+    // because Substack doesn't support text wrapping around images
+    const enluminureInfo = this.detectEnluminure(markdown);
 
     // Process each local image
     for (const ref of localImages) {
-      const vaultPath = this.resolveImagePath(ref.path, basePath);
+      // Check if this is an enluminure image - skip it entirely
+      const isEnluminure =
+        enluminureInfo && ref.fullMatch === enluminureInfo.imageRef.fullMatch;
+
+      if (isEnluminure) {
+        // Remove enluminure from markdown without uploading
+        // (Substack doesn't support the drop-cap/float layout)
+        processedMarkdown = processedMarkdown.replace(ref.fullMatch, "");
+        this.logger.info(
+          `Skipping enluminure (not supported on Substack): ${ref.path}`
+        );
+        continue;
+      }
+
+      // Resolve path based on whether it's a wikilink or standard markdown
+      let vaultPath: string;
+      if (ref.isWikiLink) {
+        vaultPath = this.resolveWikiLinkPath(ref.path, basePath);
+      } else {
+        vaultPath = this.resolveImagePath(ref.path, basePath);
+      }
 
       this.logger.debug(`Processing image: ${ref.path} -> ${vaultPath}`);
 
@@ -223,6 +352,9 @@ export class ImageHandler {
         );
       }
     }
+
+    // Clean up any leftover empty lines from enluminure removal
+    processedMarkdown = processedMarkdown.replace(/^\s*\n/, "");
 
     return {
       processedMarkdown,

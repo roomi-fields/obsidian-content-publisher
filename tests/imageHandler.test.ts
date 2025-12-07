@@ -565,4 +565,175 @@ More text
       expect(mockLogger.warn).toHaveBeenCalled();
     });
   });
+
+  describe("parseImageReferences - Obsidian wikilinks", () => {
+    it("should extract wikilink image references", () => {
+      const markdown = "![[image.png]]";
+      const refs = imageHandler.parseImageReferences(markdown);
+
+      expect(refs).toHaveLength(1);
+      expect(refs[0]).toEqual({
+        fullMatch: "![[image.png]]",
+        alt: "",
+        path: "image.png",
+        isLocal: true,
+        isWikiLink: true,
+        wikiLinkSize: undefined,
+      });
+    });
+
+    it("should extract wikilink with size", () => {
+      const markdown = "![[image.png|150]]";
+      const refs = imageHandler.parseImageReferences(markdown);
+
+      expect(refs).toHaveLength(1);
+      expect(refs[0]).toEqual({
+        fullMatch: "![[image.png|150]]",
+        alt: "",
+        path: "image.png",
+        isLocal: true,
+        isWikiLink: true,
+        wikiLinkSize: 150,
+      });
+    });
+
+    it("should extract wikilink with alt text", () => {
+      const markdown = "![[image.png|my alt text]]";
+      const refs = imageHandler.parseImageReferences(markdown);
+
+      expect(refs).toHaveLength(1);
+      expect(refs[0]).toEqual({
+        fullMatch: "![[image.png|my alt text]]",
+        alt: "my alt text",
+        path: "image.png",
+        isLocal: true,
+        isWikiLink: true,
+        wikiLinkSize: undefined,
+      });
+    });
+
+    it("should extract wikilink with full path", () => {
+      const markdown = "![[_Assets/Enluminures/image.png|150]]";
+      const refs = imageHandler.parseImageReferences(markdown);
+
+      expect(refs).toHaveLength(1);
+      expect(refs[0]?.path).toBe("_Assets/Enluminures/image.png");
+      expect(refs[0]?.wikiLinkSize).toBe(150);
+    });
+
+    it("should extract both standard and wikilink images", () => {
+      const markdown =
+        "![standard](photo.jpg)\n\n![[wikilink.png|200]]";
+      const refs = imageHandler.parseImageReferences(markdown);
+
+      expect(refs).toHaveLength(2);
+      expect(refs[0]?.isWikiLink).toBeUndefined();
+      expect(refs[1]?.isWikiLink).toBe(true);
+    });
+  });
+
+  describe("detectEnluminure", () => {
+    it("should detect enluminure wikilink at start of content", () => {
+      const markdown = "![[_Assets/Enluminures/enluminure-2025.png|150]]\n\nSome text";
+      const result = imageHandler.detectEnluminure(markdown);
+
+      expect(result).not.toBeNull();
+      expect(result?.imageRef.path).toBe("_Assets/Enluminures/enluminure-2025.png");
+      expect(result?.imageRef.wikiLinkSize).toBe(150);
+      expect(result?.lineIndex).toBe(0);
+    });
+
+    it("should detect enluminure standard markdown at start", () => {
+      const markdown = "![](path/to/enluminure.png)\n\nSome text";
+      const result = imageHandler.detectEnluminure(markdown);
+
+      expect(result).not.toBeNull();
+      expect(result?.imageRef.path).toBe("path/to/enluminure.png");
+    });
+
+    it("should not detect non-enluminure image", () => {
+      const markdown = "![](regular-image.png)\n\nSome text";
+      const result = imageHandler.detectEnluminure(markdown);
+
+      expect(result).toBeNull();
+    });
+
+    it("should skip empty lines before enluminure", () => {
+      const markdown = "\n\n![[enluminure.png|100]]\n\nText";
+      const result = imageHandler.detectEnluminure(markdown);
+
+      expect(result).not.toBeNull();
+      expect(result?.lineIndex).toBe(2);
+    });
+
+    it("should not detect enluminure after text", () => {
+      const markdown = "Some text first\n\n![[enluminure.png]]";
+      const result = imageHandler.detectEnluminure(markdown);
+
+      expect(result).toBeNull();
+    });
+
+    it("should be case-insensitive for enluminure detection", () => {
+      const markdown = "![[_Assets/ENLUMINURE-test.png]]";
+      const result = imageHandler.detectEnluminure(markdown);
+
+      expect(result).not.toBeNull();
+    });
+  });
+
+  describe("processMarkdownImages with enluminure", () => {
+    it("should skip enluminure and not upload it", async () => {
+      const markdown = "![[enluminure.png|150]]\n\nSome text";
+
+      // No mock file needed - enluminure should be skipped without upload
+      const result = await imageHandler.processMarkdownImages(
+        "mypub",
+        markdown,
+        "",
+      );
+
+      // Enluminure should be removed from markdown
+      expect(result.processedMarkdown).not.toContain("enluminure.png");
+      expect(result.processedMarkdown.trim()).toBe("Some text");
+      // Upload should not have been called for enluminure
+      expect(mockApi.uploadImage).not.toHaveBeenCalled();
+    });
+
+    it("should remove enluminure from processed markdown without uploading", async () => {
+      const markdown = "![[enluminure.png]]\n\nSome text";
+
+      const result = await imageHandler.processMarkdownImages(
+        "mypub",
+        markdown,
+        "",
+      );
+
+      expect(result.processedMarkdown).not.toContain("enluminure.png");
+      expect(result.processedMarkdown.trim()).toBe("Some text");
+    });
+
+    it("should handle wikilink images without enluminure", async () => {
+      const markdown = "![[regular-image.png|200]]\n\nSome text";
+      const mockFile = createMockFile(
+        "regular-image.png",
+        "regular-image.png",
+        5000,
+      );
+
+      mockVault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockVault.readBinary.mockResolvedValue(new ArrayBuffer(5000));
+      mockApi.uploadImage.mockResolvedValue({
+        success: true,
+        data: { url: "https://cdn.com/regular-image.png" },
+      });
+
+      const result = await imageHandler.processMarkdownImages(
+        "mypub",
+        markdown,
+        "",
+      );
+
+      expect(result.processedMarkdown).toContain("https://cdn.com/regular-image.png");
+    });
+  });
 });

@@ -119,6 +119,8 @@ export class WordPressAPI {
    * @param options.excerpt - Post excerpt/meta description
    * @param options.featuredMediaId - Media ID for featured image
    * @param options.rankMathMeta - Rank Math SEO meta fields
+   * @param options.lang - Polylang language code (fr, en)
+   * @param options.translations - Polylang translations mapping (e.g., {fr: 123})
    */
   async createPost(
     title: string,
@@ -131,6 +133,8 @@ export class WordPressAPI {
       featuredMediaId?: number;
       rankMathMeta?: RankMathMeta;
       tags?: number[];
+      lang?: "fr" | "en";
+      translations?: Record<string, number>;
     }
   ): Promise<{
     success: boolean;
@@ -161,6 +165,14 @@ export class WordPressAPI {
     // Add tags
     if (options?.tags && options.tags.length > 0) {
       payload.tags = options.tags;
+    }
+    // Add Polylang language
+    if (options?.lang) {
+      payload.lang = options.lang;
+    }
+    // Add Polylang translations (link to other language version)
+    if (options?.translations) {
+      payload.translations = options.translations as Record<"fr" | "en", number>;
     }
 
     const response = await requestUrl({

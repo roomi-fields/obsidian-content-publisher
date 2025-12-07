@@ -9,8 +9,15 @@ import {
   WordPressPostStatus,
   WordPressEnluminureInfo,
   RankMathMeta,
-  WordPressServer
+  WordPressServer,
+  BilingualContent,
+  LanguageContent,
+  PolylangLanguage
 } from "./types";
+import {
+  isBilingualContent,
+  parseBilingualContent
+} from "./bilingualParser";
 
 export interface WordPressPostComposerOptions {
   servers: WordPressServer[];
@@ -33,6 +40,10 @@ export class WordPressPostComposer extends Modal {
   private servers: WordPressServer[];
   private currentServer: WordPressServer;
   private categorySelectEl: HTMLSelectElement | null = null;
+  // Bilingual support
+  private bilingualContent: BilingualContent | null = null;
+  private isBilingual: boolean = false;
+  private rawContent: string = "";
 
   constructor(
     app: App,
@@ -88,10 +99,18 @@ export class WordPressPostComposer extends Modal {
     );
     this.imageHandler = new WordPressImageHandler(this.api, this.app.vault, this.logger);
 
-    // Update category dropdown
+    // Update category dropdown with Polylang filtering
     if (this.categorySelectEl) {
       this.categorySelectEl.empty();
-      for (const cat of this.categories) {
+
+      // Filter categories when Polylang is enabled
+      let displayCategories = this.categories;
+      if (server.polylang?.enabled) {
+        const polylangCategories = Object.keys(server.polylang.categoryMapping);
+        displayCategories = this.categories.filter(cat => polylangCategories.includes(cat));
+      }
+
+      for (const cat of displayCategories) {
         const option = this.categorySelectEl.createEl("option", {
           text: cat,
           value: cat
@@ -103,15 +122,21 @@ export class WordPressPostComposer extends Modal {
     }
   }
 
-  override onOpen() {
+  override async onOpen() {
     const { contentEl } = this;
 
     // Get active file and read frontmatter
     this.activeFile = this.app.workspace.getActiveFile();
     this.loadFrontmatter();
 
-    // Title
-    contentEl.createEl("h2", { text: "Publish to WordPress" });
+    // Check for bilingual content
+    await this.detectBilingualContent();
+
+    // Title - indicate if bilingual
+    const titleText = this.isBilingual
+      ? "Publish to WordPress (Bilingual 🇫🇷/🇬🇧)"
+      : "Publish to WordPress";
+    contentEl.createEl("h2", { text: titleText });
 
     // Server selector (if multiple servers)
     if (this.servers.length > 1) {
@@ -156,12 +181,24 @@ export class WordPressPostComposer extends Modal {
       });
       this.categorySelectEl = categorySelect;
 
+      // Filter categories: when Polylang is enabled, only show base categories
+      // (those in the Polylang mapping), not the _en variants
+      let displayCategories = this.categories;
+      if (this.currentServer.polylang?.enabled) {
+        const polylangCategories = Object.keys(this.currentServer.polylang.categoryMapping);
+        displayCategories = this.categories.filter(cat => polylangCategories.includes(cat));
+        this.logger.debug("Filtered categories for Polylang", {
+          original: this.categories,
+          filtered: displayCategories
+        });
+      }
+
       // Apply frontmatter category if valid, otherwise use default
       // Support case-insensitive matching for better UX
       let matchedCategory: string | undefined;
       if (this.frontmatter.category) {
         const frontmatterCategoryLower = this.frontmatter.category.toLowerCase();
-        matchedCategory = this.categories.find(
+        matchedCategory = displayCategories.find(
           cat => cat.toLowerCase() === frontmatterCategoryLower
         );
       }
@@ -170,24 +207,24 @@ export class WordPressPostComposer extends Modal {
         frontmatterCategory: this.frontmatter.category,
         matchedCategory,
         defaultCategory: this.category,
-        availableCategories: this.categories,
+        availableCategories: displayCategories,
         isValidCategory: !!matchedCategory
       });
 
-      const effectiveCategory = matchedCategory || this.category;
+      const effectiveCategory = matchedCategory || (displayCategories.includes(this.category) ? this.category : displayCategories[0] || "");
       this.category = effectiveCategory;
 
       if (this.frontmatter.category && !matchedCategory) {
         this.logger.warn("Frontmatter category not found in configured categories", {
           frontmatterCategory: this.frontmatter.category,
-          availableCategories: this.categories,
+          availableCategories: displayCategories,
           fallbackToDefault: this.category
         });
       }
 
       this.logger.debug("Selected category", { effectiveCategory });
 
-      for (const cat of this.categories) {
+      for (const cat of displayCategories) {
         const option = categorySelect.createEl("option", {
           text: cat,
           value: cat
@@ -260,6 +297,33 @@ export class WordPressPostComposer extends Modal {
       text: "The active note will be converted and published as a WordPress article.",
       cls: "wordpress-note-text"
     });
+  }
+
+  /**
+   * Detect if the current file contains bilingual content
+   */
+  private async detectBilingualContent(): Promise<void> {
+    if (!this.activeFile) {
+      return;
+    }
+
+    this.rawContent = await this.app.vault.cachedRead(this.activeFile);
+
+    // Check if content has bilingual callouts
+    if (isBilingualContent(this.rawContent)) {
+      this.bilingualContent = parseBilingualContent(this.rawContent);
+      this.isBilingual = this.bilingualContent !== null;
+
+      if (this.isBilingual && this.bilingualContent) {
+        this.logger.info("Detected bilingual content", {
+          frTitle: this.bilingualContent.fr.title,
+          enTitle: this.bilingualContent.en.title
+        });
+
+        // Use FR title as default display title
+        this.title = this.bilingualContent.fr.title;
+      }
+    }
   }
 
   private loadFrontmatter(): void {
@@ -411,10 +475,10 @@ export class WordPressPostComposer extends Modal {
   /**
    * Generate the enluminure HTML structure matching the working WordPress pages
    * Creates the medieval drop-cap effect with image floated left
-   * Note: WordPress already displays the post title separately, so we don't include it here
    *
-   * The enluminure image represents the first letter of the first h1 title,
-   * so we remove that first letter (medieval manuscript style)
+   * Note: The H1 title is KEPT in the content with its first letter removed.
+   * The first letter is represented by the enluminure image (drop cap effect).
+   * WordPress's automatic title display should be hidden via theme CSS.
    *
    * IMPORTANT: Uses inline styles with !important to override theme CSS
    * WordPress sanitizes <style> tags, so we must use inline styles directly on elements
@@ -422,22 +486,24 @@ export class WordPressPostComposer extends Modal {
    */
   private generateEnluminureHtml(
     enluminure: WordPressEnluminureInfo,
-    title: string,
+    _title: string,
     bodyHtml: string
   ): string {
     const enluminureUrl = enluminure.wordpressUrl || "";
 
-    // Remove the first letter from the first h1 title
-    // The enluminure image represents this first letter (medieval manuscript style)
-    // Also add inline styles to the first h1
-    const processedBodyHtml = bodyHtml.replace(
-      /<h1([^>]*)>(.)([\s\S]*?)<\/h1>/,
-      (_match, attrs, _firstChar, restOfTitle) => {
-        // Skip the first character (it's represented by the enluminure image)
-        // Add inline styles to prevent clearing and adjust margins
-        return `<h1 style="margin-top: 0 !important; margin-bottom: 1rem !important; clear: none !important;">${restOfTitle}</h1>`;
+    // Keep H1 but remove the first letter (shown as enluminure drop cap)
+    // Match H1, capture attributes and content, then remove first letter from content
+    let processedBodyHtml = bodyHtml.replace(
+      /<h1([^>]*)>(.+?)<\/h1>/i,
+      (match, attrs, content) => {
+        // Remove leading whitespace and first character from title
+        const trimmedContent = content.trim();
+        const titleWithoutFirstLetter = trimmedContent.slice(1);
+        return `<h1${attrs}>${titleWithoutFirstLetter}</h1>`;
       }
     );
+
+    // Keep H3 subtitle if present (no changes needed)
 
     // Add inline styles to all h2 and h3 elements to prevent clearing
     const finalBodyHtml = processedBodyHtml
@@ -586,6 +652,12 @@ ${finalBodyHtml}
     // Disable buttons IMMEDIATELY to prevent double-clicks
     const buttonText = status === "publish" ? "Publishing..." : "Saving...";
     this.setButtonsDisabled(true, buttonText);
+
+    // Check if this is bilingual content with Polylang enabled
+    if (this.isBilingual && this.bilingualContent && this.currentServer.polylang?.enabled) {
+      await this.saveBilingualToWordPress(status);
+      return;
+    }
 
     const contentResult = await this.getHtmlContent();
     if (!contentResult) {
@@ -755,6 +827,220 @@ ${finalBodyHtml}
       new Notice(`Failed to save: ${errorMessage}`);
       this.setButtonsDisabled(false);
     }
+  }
+
+  /**
+   * Publish bilingual content to WordPress using Polylang
+   * 1. Publish FR version first
+   * 2. Publish EN version with translation link to FR
+   */
+  private async saveBilingualToWordPress(status: WordPressPostStatus): Promise<void> {
+    if (!this.bilingualContent || !this.currentServer.polylang) {
+      this.setButtonsDisabled(false);
+      return;
+    }
+
+    const polylangConfig = this.currentServer.polylang;
+
+    try {
+      // Get category IDs for both languages
+      const categoryMapping = polylangConfig.categoryMapping[this.category];
+      if (!categoryMapping) {
+        throw new Error(`No Polylang category mapping for: ${this.category}`);
+      }
+
+      this.logger.info("Starting bilingual publication", {
+        category: this.category,
+        frCategoryId: categoryMapping.fr,
+        enCategoryId: categoryMapping.en
+      });
+
+      // ===== PUBLISH FR VERSION =====
+      const frContent = this.bilingualContent.fr;
+      const frHtmlResult = await this.processLanguageContent(frContent, "fr");
+      if (!frHtmlResult) {
+        throw new Error("Failed to process FR content");
+      }
+
+      // Resolve FR tags
+      let frTagIds: number[] = [];
+      if (frContent.tags && frContent.tags.length > 0) {
+        const tagResult = await this.api.resolveTagIds(frContent.tags);
+        frTagIds = tagResult.ids;
+      }
+
+      // Build FR SEO options
+      const frSeoOptions: {
+        slug?: string;
+        excerpt?: string;
+        rankMathMeta?: RankMathMeta;
+        tags?: number[];
+        lang: "fr";
+      } = { lang: "fr" };
+
+      if (frContent.slug) frSeoOptions.slug = frContent.slug;
+      if (frContent.excerpt) frSeoOptions.excerpt = frContent.excerpt;
+      if (frTagIds.length > 0) frSeoOptions.tags = frTagIds;
+
+      // Build FR Rank Math meta
+      if (frContent.focus_keyword || frContent.excerpt) {
+        const rankMath: RankMathMeta = {};
+        if (frContent.focus_keyword) rankMath.rank_math_focus_keyword = frContent.focus_keyword;
+        if (frContent.excerpt) rankMath.rank_math_description = frContent.excerpt;
+        if (frHtmlResult.enluminure?.wordpressUrl) {
+          rankMath.rank_math_facebook_image = frHtmlResult.enluminure.wordpressUrl;
+          rankMath.rank_math_twitter_use_facebook = "on";
+        }
+        frSeoOptions.rankMathMeta = rankMath;
+      }
+
+      // Create/Update FR post
+      const frResult = await this.api.createPost(
+        frContent.title,
+        frHtmlResult.html,
+        [categoryMapping.fr],
+        status,
+        frSeoOptions
+      );
+
+      if (!frResult.success || !frResult.data) {
+        throw new Error(`Failed to publish FR: ${frResult.error}`);
+      }
+
+      const frPostId = frResult.data.id;
+      const frUrl = frResult.data.link;
+      this.logger.info(`Published FR version: ${frUrl} (ID: ${frPostId})`);
+
+      // ===== PUBLISH EN VERSION WITH TRANSLATION LINK =====
+      const enContent = this.bilingualContent.en;
+      const enHtmlResult = await this.processLanguageContent(enContent, "en");
+      if (!enHtmlResult) {
+        throw new Error("Failed to process EN content");
+      }
+
+      // Resolve EN tags
+      let enTagIds: number[] = [];
+      if (enContent.tags && enContent.tags.length > 0) {
+        const tagResult = await this.api.resolveTagIds(enContent.tags);
+        enTagIds = tagResult.ids;
+      }
+
+      // Build EN SEO options with translation link
+      const enSeoOptions: {
+        slug?: string;
+        excerpt?: string;
+        rankMathMeta?: RankMathMeta;
+        tags?: number[];
+        lang: "en";
+        translations: Record<string, number>;
+      } = {
+        lang: "en",
+        translations: { fr: frPostId }
+      };
+
+      if (enContent.slug) enSeoOptions.slug = enContent.slug;
+      if (enContent.excerpt) enSeoOptions.excerpt = enContent.excerpt;
+      if (enTagIds.length > 0) enSeoOptions.tags = enTagIds;
+
+      // Build EN Rank Math meta
+      if (enContent.focus_keyword || enContent.excerpt) {
+        const rankMath: RankMathMeta = {};
+        if (enContent.focus_keyword) rankMath.rank_math_focus_keyword = enContent.focus_keyword;
+        if (enContent.excerpt) rankMath.rank_math_description = enContent.excerpt;
+        if (enHtmlResult.enluminure?.wordpressUrl) {
+          rankMath.rank_math_facebook_image = enHtmlResult.enluminure.wordpressUrl;
+          rankMath.rank_math_twitter_use_facebook = "on";
+        }
+        enSeoOptions.rankMathMeta = rankMath;
+      }
+
+      // Create/Update EN post
+      const enResult = await this.api.createPost(
+        enContent.title,
+        enHtmlResult.html,
+        [categoryMapping.en],
+        status,
+        enSeoOptions
+      );
+
+      if (!enResult.success || !enResult.data) {
+        throw new Error(`Failed to publish EN: ${enResult.error}`);
+      }
+
+      const enUrl = enResult.data.link;
+      this.logger.info(`Published EN version: ${enUrl}`);
+
+      // ===== SUCCESS =====
+      const statusText = status === "publish" ? "published" : "draft";
+      new Notice(
+        `Bilingual ${statusText}:\n🇫🇷 ${frUrl}\n🇬🇧 ${enUrl}`
+      );
+
+      // Update frontmatter with both URLs
+      if (this.activeFile) {
+        try {
+          await this.app.fileManager.processFrontMatter(
+            this.activeFile,
+            (frontmatter) => {
+              frontmatter.wordpress_url_fr = frUrl;
+              frontmatter.wordpress_url_en = enUrl;
+            }
+          );
+          this.logger.info("Updated frontmatter with bilingual WordPress URLs");
+        } catch (error) {
+          this.logger.warn("Failed to update frontmatter", error);
+        }
+      }
+
+      this.close();
+    } catch (error) {
+      this.logger.error("Failed to publish bilingual content", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      new Notice(`Failed to publish bilingual: ${errorMessage}`);
+      this.setButtonsDisabled(false);
+    }
+  }
+
+  /**
+   * Process content for a specific language
+   * Handles images, wikilinks, and converts to HTML
+   */
+  private async processLanguageContent(
+    langContent: LanguageContent,
+    _lang: PolylangLanguage
+  ): Promise<{ html: string; enluminure?: WordPressEnluminureInfo } | null> {
+    if (!this.activeFile) return null;
+
+    let markdown = langContent.content;
+
+    // Process images
+    const basePath = this.activeFile.parent?.path || "";
+    const imageResult = await this.imageHandler.processMarkdownImages(
+      markdown,
+      basePath
+    );
+    markdown = imageResult.processedMarkdown;
+
+    // Process wikilinks
+    markdown = await this.wikiLinkConverter.processWikiLinks(markdown);
+
+    // Convert to HTML
+    const html = this.markdownToHtml(markdown);
+
+    // If there's an enluminure, wrap with enluminure HTML
+    if (imageResult.enluminure?.wordpressUrl) {
+      const enluminuredHtml = this.generateEnluminureHtml(
+        imageResult.enluminure,
+        langContent.title,
+        html
+      );
+      return { html: enluminuredHtml, enluminure: imageResult.enluminure };
+    }
+
+    if (imageResult.enluminure) {
+      return { html, enluminure: imageResult.enluminure };
+    }
+    return { html };
   }
 
   private setButtonsDisabled(disabled: boolean, text?: string) {

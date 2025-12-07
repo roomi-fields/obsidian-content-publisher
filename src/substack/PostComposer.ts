@@ -10,6 +10,12 @@ import {
   SubstackDraftResponse,
   SubstackDraftPayload
 } from "./types";
+import {
+  isBilingualContent,
+  parseBilingualContent,
+  getLanguageContent
+} from "../wordpress/bilingualParser";
+import { BilingualContent, PolylangLanguage } from "../wordpress/types";
 
 export interface PostComposerDefaults {
   defaultPublication: string;
@@ -40,6 +46,13 @@ export class SubstackPostComposer extends Modal {
   private frontmatter: SubstackFrontmatter = {};
   private defaults: PostComposerDefaults;
   private addWordPressLink: boolean = false;
+
+  // Bilingual support
+  private bilingualContent: BilingualContent | null = null;
+  private isBilingual: boolean = false;
+  private selectedLanguage: PolylangLanguage = "en"; // Default to EN for Substack
+  private rawContent: string = "";
+  private addWordPressHeader: boolean = false;
 
   constructor(
     app: App,
@@ -77,14 +90,21 @@ export class SubstackPostComposer extends Modal {
     }
   }
 
-  override onOpen() {
+  override async onOpen() {
     const { contentEl } = this;
 
     // Get active file and read frontmatter
     this.activeFile = this.app.workspace.getActiveFile();
     this.loadFrontmatter();
 
-    new Setting(contentEl).setName("Publish to substack").setHeading();
+    // Detect bilingual content
+    await this.detectBilingualContent();
+
+    // Title - indicate if bilingual
+    const titleText = this.isBilingual
+      ? "Publish to Substack (Bilingual 🇫🇷/🇬🇧)"
+      : "Publish to Substack";
+    new Setting(contentEl).setName(titleText).setHeading();
 
     // Publication selector (hidden if only one publication)
     if (this.publications.length > 1) {
@@ -118,19 +138,73 @@ export class SubstackPostComposer extends Modal {
     });
     sectionContainer.style.display = "none"; // Hidden until sections loaded
 
+    // Language selector (only for bilingual content)
+    let titleInput: HTMLInputElement;
+    let subtitleInput: HTMLInputElement;
+    let tagsInput: HTMLInputElement;
+
+    if (this.isBilingual) {
+      const langContainer = contentEl.createDiv({
+        cls: "substack-field-container"
+      });
+      langContainer.createEl("label", { text: "Language to publish" });
+      const langSelect = langContainer.createEl("select", {
+        cls: "substack-select"
+      });
+
+      const langOptions: { value: PolylangLanguage; label: string }[] = [
+        { value: "en", label: "🇬🇧 English" },
+        { value: "fr", label: "🇫🇷 Français" }
+      ];
+
+      for (const opt of langOptions) {
+        const option = langSelect.createEl("option", {
+          text: opt.label,
+          value: opt.value
+        });
+        if (opt.value === this.selectedLanguage) {
+          option.selected = true;
+        }
+      }
+
+      langSelect.addEventListener("change", () => {
+        this.selectedLanguage = langSelect.value as PolylangLanguage;
+        // Update fields with selected language content
+        this.updateFieldsForLanguage(titleInput, subtitleInput, tagsInput);
+      });
+    }
+
+    // WordPress header links option (when bilingual URLs exist)
+    const hasWordPressUrls = this.frontmatter.wordpress_url_fr || this.frontmatter.wordpress_url_en;
+    if (this.isBilingual && hasWordPressUrls) {
+      new Setting(contentEl)
+        .setName("Add WordPress links header")
+        .setDesc("Include 🇫🇷/🇬🇧 links to WordPress versions at the top")
+        .addToggle((toggle) => {
+          toggle
+            .setValue(this.addWordPressHeader)
+            .onChange((value) => {
+              this.addWordPressHeader = value;
+            });
+        });
+    }
+
     // Title input
     const titleContainer = contentEl.createDiv({
       cls: "substack-field-container"
     });
     titleContainer.createEl("label", { text: "Title" });
-    const titleInput = titleContainer.createEl("input", {
+    titleInput = titleContainer.createEl("input", {
       type: "text",
       placeholder: "Post title",
       cls: "substack-input"
     });
 
-    // Pre-fill with frontmatter or file name
-    if (this.frontmatter.title) {
+    // Pre-fill with bilingual content or frontmatter or file name
+    if (this.isBilingual && this.bilingualContent) {
+      const langContent = getLanguageContent(this.bilingualContent, this.selectedLanguage);
+      this.title = langContent.title;
+    } else if (this.frontmatter.title) {
       this.title = this.frontmatter.title;
     } else if (this.activeFile) {
       this.title = this.activeFile.basename;
@@ -146,17 +220,20 @@ export class SubstackPostComposer extends Modal {
       cls: "substack-field-container"
     });
     subtitleContainer.createEl("label", { text: "Subtitle" });
-    const subtitleInput = subtitleContainer.createEl("input", {
+    subtitleInput = subtitleContainer.createEl("input", {
       type: "text",
       placeholder: "Post subtitle",
       cls: "substack-input"
     });
 
-    // Pre-fill with frontmatter
-    if (this.frontmatter.subtitle) {
+    // Pre-fill with bilingual content or frontmatter
+    if (this.isBilingual && this.bilingualContent) {
+      const langContent = getLanguageContent(this.bilingualContent, this.selectedLanguage);
+      this.subtitle = langContent.subtitle || "";
+    } else if (this.frontmatter.subtitle) {
       this.subtitle = this.frontmatter.subtitle;
-      subtitleInput.value = this.subtitle;
     }
+    subtitleInput.value = this.subtitle;
 
     subtitleInput.addEventListener("input", () => {
       this.subtitle = subtitleInput.value;
@@ -212,17 +289,22 @@ export class SubstackPostComposer extends Modal {
       cls: "substack-field-container"
     });
     tagsContainer.createEl("label", { text: "Tags" });
-    const tagsInput = tagsContainer.createEl("input", {
+    tagsInput = tagsContainer.createEl("input", {
       type: "text",
       placeholder: "tag1, tag2, tag3",
       cls: "substack-input"
     });
 
-    // Pre-fill with frontmatter or defaults
-    if (this.frontmatter.tags && this.frontmatter.tags.length > 0) {
+    // Pre-fill with bilingual content or frontmatter or defaults
+    if (this.isBilingual && this.bilingualContent) {
+      const langContent = getLanguageContent(this.bilingualContent, this.selectedLanguage);
+      if (langContent.tags && langContent.tags.length > 0) {
+        this.tags = langContent.tags;
+      }
+    } else if (this.frontmatter.tags && this.frontmatter.tags.length > 0) {
       this.tags = this.frontmatter.tags;
     }
-    // Show tags in input (either from frontmatter or defaults)
+    // Show tags in input (either from bilingual, frontmatter or defaults)
     if (this.tags.length > 0) {
       tagsInput.value = this.tags.join(", ");
     }
@@ -234,8 +316,8 @@ export class SubstackPostComposer extends Modal {
         .filter((t) => t.length > 0);
     });
 
-    // WordPress link checkbox - only visible if wordpress_url exists
-    if (this.frontmatter.wordpress_url) {
+    // WordPress link checkbox - only visible if wordpress_url exists (non-bilingual mode)
+    if (!this.isBilingual && this.frontmatter.wordpress_url) {
       new Setting(contentEl)
         .setName("Add WordPress link in footer")
         .setDesc("Include a link to the WordPress version of this article")
@@ -252,31 +334,7 @@ export class SubstackPostComposer extends Modal {
         });
     }
 
-    // Content preview
-    const previewContainer = contentEl.createDiv({
-      cls: "substack-preview-container"
-    });
-    previewContainer.createEl("label", { text: "Preview" });
-    const preview = previewContainer.createEl("div", {
-      cls: "substack-preview"
-    });
-
-    if (this.activeFile) {
-      this.app.vault
-        .cachedRead(this.activeFile)
-        .then((content) => {
-          // Remove frontmatter for preview
-          const cleanContent = content.replace(/^---[\s\S]*?---\n?/, "");
-          preview.textContent =
-            cleanContent.slice(0, 500) +
-            (cleanContent.length > 500 ? "..." : "");
-        })
-        .catch(() => {
-          preview.textContent = "Failed to load preview";
-        });
-    } else {
-      preview.textContent = "No active file selected";
-    }
+    // Preview removed - not useful
 
     // Buttons
     const buttonContainer = contentEl.createDiv({
@@ -318,6 +376,67 @@ export class SubstackPostComposer extends Modal {
     void this.loadSections(contentEl);
   }
 
+  /**
+   * Detect bilingual content in the active file
+   */
+  private async detectBilingualContent(): Promise<void> {
+    if (!this.activeFile) {
+      return;
+    }
+
+    this.rawContent = await this.app.vault.cachedRead(this.activeFile);
+
+    // Check if content has bilingual callouts
+    if (isBilingualContent(this.rawContent)) {
+      this.bilingualContent = parseBilingualContent(this.rawContent);
+      this.isBilingual = this.bilingualContent !== null;
+
+      if (this.isBilingual && this.bilingualContent) {
+        this.logger.info("Detected bilingual content for Substack", {
+          frTitle: this.bilingualContent.fr.title,
+          enTitle: this.bilingualContent.en.title
+        });
+      }
+    }
+  }
+
+  /**
+   * Update form fields when language selection changes
+   */
+  private updateFieldsForLanguage(
+    titleInput: HTMLInputElement,
+    subtitleInput: HTMLInputElement,
+    tagsInput: HTMLInputElement
+  ): void {
+    if (!this.bilingualContent) return;
+
+    const langContent = getLanguageContent(this.bilingualContent, this.selectedLanguage);
+
+    // Update title
+    this.title = langContent.title;
+    titleInput.value = this.title;
+
+    // Update subtitle
+    this.subtitle = langContent.subtitle || "";
+    subtitleInput.value = this.subtitle;
+
+    // Update tags
+    if (langContent.tags && langContent.tags.length > 0) {
+      this.tags = langContent.tags;
+      tagsInput.value = this.tags.join(", ");
+    } else {
+      this.tags = [];
+      tagsInput.value = "";
+    }
+
+    this.logger.debug("Updated fields for language", {
+      language: this.selectedLanguage,
+      title: this.title,
+      subtitle: this.subtitle,
+      tags: this.tags
+    });
+  }
+
   private loadFrontmatter(): void {
     if (!this.activeFile) return;
 
@@ -357,6 +476,26 @@ export class SubstackPostComposer extends Modal {
       }
       if (typeof fm.excerpt === "string") {
         parsed.excerpt = fm.excerpt;
+      }
+
+      // Bilingual-specific fields with _fr/_en suffixes
+      if (typeof fm.substack_url_fr === "string") {
+        parsed.substack_url_fr = fm.substack_url_fr;
+      }
+      if (typeof fm.substack_url_en === "string") {
+        parsed.substack_url_en = fm.substack_url_en;
+      }
+      if (typeof fm.substack_draft_id_fr === "string") {
+        parsed.substack_draft_id_fr = fm.substack_draft_id_fr;
+      }
+      if (typeof fm.substack_draft_id_en === "string") {
+        parsed.substack_draft_id_en = fm.substack_draft_id_en;
+      }
+      if (typeof fm.wordpress_url_fr === "string") {
+        parsed.wordpress_url_fr = fm.wordpress_url_fr;
+      }
+      if (typeof fm.wordpress_url_en === "string") {
+        parsed.wordpress_url_en = fm.wordpress_url_en;
       }
 
       this.frontmatter = parsed;
@@ -477,16 +616,28 @@ export class SubstackPostComposer extends Modal {
       return null;
     }
 
-    const content = await this.app.vault.cachedRead(activeFile);
-    // Remove frontmatter
-    const cleanContent = content.replace(/^---[\s\S]*?---\n?/, "");
+    let contentToProcess: string;
+
+    // For bilingual content, extract the selected language's content
+    if (this.isBilingual && this.bilingualContent) {
+      const langContent = getLanguageContent(this.bilingualContent, this.selectedLanguage);
+      contentToProcess = langContent.content;
+      this.logger.debug("Using bilingual content", {
+        language: this.selectedLanguage,
+        contentLength: contentToProcess.length
+      });
+    } else {
+      // Non-bilingual: use full content minus frontmatter
+      const content = await this.app.vault.cachedRead(activeFile);
+      contentToProcess = content.replace(/^---[\s\S]*?---\n?/, "");
+    }
 
     // Process images - upload local images to Substack CDN
     // Note: Enluminure images are automatically skipped (not supported on Substack)
     const basePath = activeFile.parent?.path || "";
     const imageResult = await this.imageHandler.processMarkdownImages(
       this.selectedPublication,
-      cleanContent,
+      contentToProcess,
       basePath
     );
 
@@ -509,8 +660,16 @@ export class SubstackPostComposer extends Modal {
 
     let processedContent = imageResult.processedMarkdown;
 
-    // Add WordPress link footer if enabled and wordpress_url exists
-    if (this.addWordPressLink && this.frontmatter.wordpress_url) {
+    // Add WordPress header links for bilingual content
+    if (this.isBilingual && this.addWordPressHeader) {
+      const header = this.generateWordPressHeader();
+      if (header) {
+        processedContent = header + "\n\n" + processedContent;
+      }
+    }
+
+    // Add WordPress link footer if enabled (non-bilingual mode)
+    if (!this.isBilingual && this.addWordPressLink && this.frontmatter.wordpress_url) {
       const footer = `\n\n---\n\n📖 Lire cet article sur mon site : [Mon Site](${this.frontmatter.wordpress_url})`;
       processedContent += footer;
       this.logger.debug("Added WordPress link footer", {
@@ -522,28 +681,57 @@ export class SubstackPostComposer extends Modal {
   }
 
   /**
+   * Generate WordPress header with FR/EN links
+   */
+  private generateWordPressHeader(): string | null {
+    const frUrl = this.frontmatter.wordpress_url_fr;
+    const enUrl = this.frontmatter.wordpress_url_en;
+
+    if (!frUrl && !enUrl) {
+      return null;
+    }
+
+    const links: string[] = [];
+    if (frUrl) {
+      links.push(`[🇫🇷 Version française](${frUrl})`);
+    }
+    if (enUrl) {
+      links.push(`[🇬🇧 English version](${enUrl})`);
+    }
+
+    return `📖 Lire sur mon site : ${links.join(" | ")}\n\n---`;
+  }
+
+  /**
    * Find an existing draft by title or ID
    * @returns Draft ID if found, null otherwise
    */
   private async findExistingDraft(): Promise<string | null> {
     try {
-      // First, check if we have a draft ID in frontmatter
-      if (this.frontmatter.substack_draft_id) {
+      // For bilingual content, check language-specific draft ID first
+      const draftIdToCheck = this.isBilingual
+        ? (this.selectedLanguage === "fr"
+          ? this.frontmatter.substack_draft_id_fr
+          : this.frontmatter.substack_draft_id_en)
+        : this.frontmatter.substack_draft_id;
+
+      if (draftIdToCheck) {
         this.logger.debug("Found draft ID in frontmatter", {
-          draftId: this.frontmatter.substack_draft_id
+          draftId: draftIdToCheck,
+          language: this.isBilingual ? this.selectedLanguage : "n/a"
         });
 
         // Verify the draft still exists
         const verifyResponse = await this.api.getDraft(
           this.selectedPublication,
-          this.frontmatter.substack_draft_id
+          draftIdToCheck
         );
 
         if (verifyResponse.status === 200) {
-          return this.frontmatter.substack_draft_id;
+          return draftIdToCheck;
         } else {
           this.logger.warn("Draft ID in frontmatter no longer exists", {
-            draftId: this.frontmatter.substack_draft_id,
+            draftId: draftIdToCheck,
             status: verifyResponse.status
           });
         }
@@ -594,10 +782,21 @@ export class SubstackPostComposer extends Modal {
       await this.app.fileManager.processFrontMatter(
         this.activeFile,
         (frontmatter) => {
-          frontmatter.substack_draft_id = draftId;
+          // Use language-specific key for bilingual content
+          if (this.isBilingual) {
+            const key = this.selectedLanguage === "fr"
+              ? "substack_draft_id_fr"
+              : "substack_draft_id_en";
+            frontmatter[key] = draftId;
+          } else {
+            frontmatter.substack_draft_id = draftId;
+          }
         }
       );
-      this.logger.info("Updated frontmatter with draft ID", { draftId });
+      this.logger.info("Updated frontmatter with draft ID", {
+        draftId,
+        language: this.isBilingual ? this.selectedLanguage : "n/a"
+      });
     } catch (error) {
       this.logger.error("Failed to update frontmatter with draft ID", error);
       // Don't throw - this is a non-critical feature
@@ -859,11 +1058,20 @@ export class SubstackPostComposer extends Modal {
         await this.app.fileManager.processFrontMatter(
           this.activeFile,
           (frontmatter) => {
-            frontmatter.substack_url = substackUrl;
+            // Use language-specific key for bilingual content
+            if (this.isBilingual) {
+              const key = this.selectedLanguage === "fr"
+                ? "substack_url_fr"
+                : "substack_url_en";
+              frontmatter[key] = substackUrl;
+            } else {
+              frontmatter.substack_url = substackUrl;
+            }
           }
         );
         this.logger.info("Updated frontmatter with Substack URL", {
-          url: substackUrl
+          url: substackUrl,
+          language: this.isBilingual ? this.selectedLanguage : "n/a"
         });
       } else {
         this.logger.warn(

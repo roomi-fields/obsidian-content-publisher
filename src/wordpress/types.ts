@@ -10,6 +10,9 @@ export type WordPressPostStatus =
   | "private"
   | "future";
 
+// Polylang language code (defined early for use in payloads)
+export type PolylangLanguage = "fr" | "en";
+
 // Rank Math SEO meta fields
 export interface RankMathMeta {
   rank_math_focus_keyword?: string;
@@ -33,6 +36,9 @@ export interface WordPressPostPayload {
   excerpt?: string | undefined;
   featured_media?: number | undefined;
   meta?: RankMathMeta | undefined;
+  // Polylang fields
+  lang?: PolylangLanguage | undefined;
+  translations?: Record<PolylangLanguage, number> | undefined;
 }
 
 // WordPress post response from API (for articles)
@@ -149,6 +155,8 @@ export interface WordPressServer {
   password: string;
   categoryPageIds: WordPressCategoryMapping;
   defaultCategory: string;
+  // Polylang multilingual support
+  polylang?: PolylangConfig;
 }
 
 // WordPress settings for the plugin (multi-server)
@@ -217,4 +225,69 @@ export interface WordPressWikiLink {
   fullMatch: string;
   linkText: string;
   displayText?: string | undefined;
+}
+
+// Polylang category mapping by language
+export interface PolylangCategoryMapping {
+  [category: string]: {
+    fr: number;
+    en: number;
+  };
+}
+
+// Polylang configuration for a server
+export interface PolylangConfig {
+  enabled: boolean;
+  categoryMapping: PolylangCategoryMapping;
+}
+
+// Bilingual content parsed from callouts
+export interface BilingualContent {
+  fr: LanguageContent;
+  en: LanguageContent;
+}
+
+// Content for a single language (parsed from callout)
+export interface LanguageContent {
+  title: string;
+  subtitle?: string;
+  excerpt?: string;
+  slug?: string;
+  focus_keyword?: string;
+  tags?: string[];
+  enluminure?: string;
+  content: string; // The actual markdown content
+}
+
+// Bilingual frontmatter (metadata per language)
+export interface BilingualFrontmatter {
+  // Common fields
+  category?: string;
+  // Per-language fields
+  fr?: LanguageFrontmatter;
+  en?: LanguageFrontmatter;
+}
+
+// Frontmatter for a single language
+export interface LanguageFrontmatter {
+  title?: string;
+  subtitle?: string;
+  excerpt?: string;
+  slug?: string;
+  focus_keyword?: string;
+  tags?: string[];
+  enluminure?: string;
+  wordpress_url?: string;
+}
+
+// Result of bilingual publication
+export interface BilingualPublishResult {
+  fr?: {
+    postId: number;
+    url: string;
+  };
+  en?: {
+    postId: number;
+    url: string;
+  };
 }

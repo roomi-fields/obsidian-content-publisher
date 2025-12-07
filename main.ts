@@ -14,7 +14,7 @@ import { SubstackAuth } from "./src/substack/auth";
 import { SubstackAudience, SubstackSection } from "./src/substack/types";
 import { WordPressAPI } from "./src/wordpress/api";
 import { WordPressPostComposer } from "./src/wordpress/PostComposer";
-import { WordPressCategoryMapping, WordPressServer } from "./src/wordpress/types";
+import { WordPressCategoryMapping, WordPressServer, PolylangConfig, PolylangCategoryMapping } from "./src/wordpress/types";
 
 interface SubstackPublisherSettings {
   devMode: boolean;
@@ -922,6 +922,58 @@ class WordPressServerEditModal extends Modal {
           button.setDisabled(false);
         }
       });
+    });
+
+    // Polylang multilingual support section
+    contentEl.createEl("h3", { text: "Polylang (Multilingual)" });
+
+    // Initialize polylang config if not present
+    if (!this.editedServer.polylang) {
+      this.editedServer.polylang = {
+        enabled: false,
+        categoryMapping: {}
+      };
+    }
+
+    new Setting(contentEl)
+      .setName("Enable Polylang")
+      .setDesc("Enable bilingual publishing (FR/EN) with Polylang plugin")
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.editedServer.polylang?.enabled ?? false)
+          .onChange((value) => {
+            if (!this.editedServer.polylang) {
+              this.editedServer.polylang = { enabled: false, categoryMapping: {} };
+            }
+            this.editedServer.polylang.enabled = value;
+          });
+      });
+
+    // Polylang category mapping
+    const polylangContainer = contentEl.createDiv();
+
+    new Setting(polylangContainer)
+      .setName("Category mapping (FR/EN)")
+      .setDesc("JSON mapping of category to FR and EN IDs. Example: {\"news\": {\"fr\": 2, \"en\": 17}}");
+
+    const polylangTextArea = polylangContainer.createEl("textarea", {
+      cls: "wordpress-category-textarea",
+      attr: { rows: "4", cols: "40", placeholder: '{"news": {"fr": 2, "en": 17}}' },
+    });
+    polylangTextArea.value = JSON.stringify(
+      this.editedServer.polylang?.categoryMapping ?? {},
+      null,
+      2
+    );
+    polylangTextArea.addEventListener("change", () => {
+      try {
+        if (!this.editedServer.polylang) {
+          this.editedServer.polylang = { enabled: false, categoryMapping: {} };
+        }
+        this.editedServer.polylang.categoryMapping = JSON.parse(polylangTextArea.value);
+      } catch {
+        // Invalid JSON, ignore
+      }
     });
 
     const buttonContainer = contentEl.createDiv({ cls: "wordpress-modal-buttons" });

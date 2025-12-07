@@ -178,6 +178,13 @@ export interface SubstackFrontmatter {
   substack_url?: string;
   substack_draft_id?: string;
   wordpress_url?: string;
+  // Bilingual-specific fields
+  substack_url_fr?: string;
+  substack_url_en?: string;
+  substack_draft_id_fr?: string;
+  substack_draft_id_en?: string;
+  wordpress_url_fr?: string;
+  wordpress_url_en?: string;
 }
 
 // API response types

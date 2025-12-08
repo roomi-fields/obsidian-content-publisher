@@ -139,8 +139,11 @@ export class SubstackPostComposer extends Modal {
     sectionContainer.style.display = "none"; // Hidden until sections loaded
 
     // Language selector (only for bilingual content)
+    // eslint-disable-next-line prefer-const
     let titleInput: HTMLInputElement;
+    // eslint-disable-next-line prefer-const
     let subtitleInput: HTMLInputElement;
+    // eslint-disable-next-line prefer-const
     let tagsInput: HTMLInputElement;
 
     if (this.isBilingual) {
@@ -664,7 +667,7 @@ export class SubstackPostComposer extends Modal {
     if (this.isBilingual && this.addWordPressHeader) {
       const header = this.generateWordPressHeader();
       if (header) {
-        processedContent = header + "\n\n" + processedContent;
+        processedContent = `${header  }\n\n${  processedContent}`;
       }
     }
 

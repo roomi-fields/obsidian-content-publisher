@@ -493,7 +493,7 @@ export class WordPressPostComposer extends Modal {
 
     // Keep H1 but remove the first letter (shown as enluminure drop cap)
     // Match H1, capture attributes and content, then remove first letter from content
-    let processedBodyHtml = bodyHtml.replace(
+    const processedBodyHtml = bodyHtml.replace(
       /<h1([^>]*)>(.+?)<\/h1>/i,
       (match, attrs, content) => {
         // Remove leading whitespace and first character from title
@@ -574,7 +574,7 @@ ${finalBodyHtml}
     html = html.replace(/<\/blockquote>\n<blockquote>/g, "\n");
 
     // Unordered lists
-    html = html.replace(/^[\*\-]\s+(.+)$/gm, "<li>$1</li>");
+    html = html.replace(/^[*-]\s+(.+)$/gm, "<li>$1</li>");
     html = html.replace(
       /(<li>.*<\/li>\n?)+/g,
       (match) => `<ul>\n${match}</ul>\n`

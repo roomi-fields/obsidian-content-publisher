@@ -290,7 +290,6 @@ export class ImageHandler {
     const errors: ImageProcessingResult["errors"] = [];
 
     let processedMarkdown = markdown;
-    let enluminureResult: ImageProcessingResult["enluminure"] = undefined;
 
     // Detect enluminure first - these will be SKIPPED (not uploaded to Substack)
     // because Substack doesn't support text wrapping around images

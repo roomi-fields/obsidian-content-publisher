@@ -145,31 +145,31 @@ function parseCalloutContent(calloutContent: string): LanguageContent | null {
         const key = metaMatch[1];
         const value = metaMatch[2];
         switch (key.toLowerCase()) {
-          case "title":
-            title = value.trim();
-            break;
-          case "subtitle":
-            subtitle = value.trim();
-            break;
-          case "excerpt":
-          case "description":
-            excerpt = value.trim();
-            break;
-          case "slug":
-            slug = value.trim();
-            break;
-          case "focus_keyword":
-            focus_keyword = value.trim();
-            break;
-          case "tags":
-            tags = value
-              .split(",")
-              .map((t) => t.trim())
-              .filter((t) => t.length > 0);
-            break;
-          case "enluminure":
-            enluminure = value.trim();
-            break;
+        case "title":
+          title = value.trim();
+          break;
+        case "subtitle":
+          subtitle = value.trim();
+          break;
+        case "excerpt":
+        case "description":
+          excerpt = value.trim();
+          break;
+        case "slug":
+          slug = value.trim();
+          break;
+        case "focus_keyword":
+          focus_keyword = value.trim();
+          break;
+        case "tags":
+          tags = value
+            .split(",")
+            .map((t) => t.trim())
+            .filter((t) => t.length > 0);
+          break;
+        case "enluminure":
+          enluminure = value.trim();
+          break;
         }
         contentStartIndex = i + 1;
       }

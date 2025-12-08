@@ -1,12 +1,12 @@
 {
-  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/settings.schema.json",
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(npm run *)",
-      "Bash(npm test*)",
-      "Bash(npm install*)",
-      "Bash(git *)",
-      "Bash(gh *)"
+      "Bash(npm run:::*)",
+      "Bash(npm test::*)",
+      "Bash(npm install::*)",
+      "Bash(git:::*)",
+      "Bash(gh:::*)"
     ],
     "deny": []
   }

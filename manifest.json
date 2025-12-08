@@ -1,7 +1,7 @@
 {
   "id": "content-publisher",
   "name": "Content Publisher",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "minAppVersion": "1.0.0",
   "description": "Publish your Obsidian notes to multiple platforms: Substack, WordPress, and more.",
   "author": "Romain Peyrichou",

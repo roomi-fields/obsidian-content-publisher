@@ -15,6 +15,9 @@ import { SubstackAudience, SubstackSection } from "./src/substack/types";
 import { WordPressAPI } from "./src/wordpress/api";
 import { WordPressPostComposer } from "./src/wordpress/PostComposer";
 import { WordPressCategoryMapping, WordPressServer, PolylangConfig, PolylangCategoryMapping } from "./src/wordpress/types";
+import { LinkedInAPI } from "./src/linkedin/api";
+import { LinkedInPostComposer } from "./src/linkedin/PostComposer";
+import { LinkedInVisibility } from "./src/linkedin/types";
 
 interface SubstackPublisherSettings {
   devMode: boolean;
@@ -38,6 +41,11 @@ interface SubstackPublisherSettings {
   // WordPress multi-server settings
   wordpressServers: WordPressServer[];
   wordpressDefaultServerId: string;
+  // LinkedIn settings
+  linkedinEnabled: boolean;
+  linkedinAccessToken: string;
+  linkedinPersonId: string;
+  linkedinDefaultVisibility: LinkedInVisibility;
 }
 
 const DEFAULT_SETTINGS: SubstackPublisherSettings = {
@@ -62,6 +70,11 @@ const DEFAULT_SETTINGS: SubstackPublisherSettings = {
   // Multi-server defaults
   wordpressServers: [],
   wordpressDefaultServerId: "",
+  // LinkedIn defaults
+  linkedinEnabled: false,
+  linkedinAccessToken: "",
+  linkedinPersonId: "",
+  linkedinDefaultVisibility: "PUBLIC",
 };
 
 export default class SubstackPublisherPlugin extends Plugin {
@@ -112,6 +125,25 @@ export default class SubstackPublisherPlugin extends Plugin {
       });
     }
 
+    // LinkedIn ribbon icon (only if enabled)
+    if (this.settings.linkedinEnabled) {
+      const liRibbonIconEl = this.addRibbonIcon(
+        "linkedin",
+        "Publish to LinkedIn",
+        () => {
+          this.publishToLinkedIn();
+        },
+      );
+      liRibbonIconEl.addClass("linkedin-ribbon-class");
+
+      // Move LinkedIn icon to bottom too
+      this.app.workspace.onLayoutReady(() => {
+        setTimeout(() => {
+          liRibbonIconEl.parentElement?.appendChild(liRibbonIconEl);
+        }, 100);
+      });
+    }
+
     // Move icon to bottom of ribbon after layout is ready
     this.app.workspace.onLayoutReady(() => {
       setTimeout(() => {
@@ -132,6 +164,14 @@ export default class SubstackPublisherPlugin extends Plugin {
       name: "Publish to WordPress",
       callback: () => {
         this.publishToWordPress();
+      },
+    });
+
+    this.addCommand({
+      id: "publish-to-linkedin",
+      name: "Publish to LinkedIn",
+      callback: () => {
+        this.publishToLinkedIn();
       },
     });
 
@@ -257,6 +297,35 @@ export default class SubstackPublisherPlugin extends Plugin {
     const composer = new WordPressPostComposer(this.app, this.logger, {
       servers: this.settings.wordpressServers,
       defaultServerId: this.settings.wordpressDefaultServerId,
+    });
+    composer.open();
+  }
+
+  private publishToLinkedIn(): void {
+    this.logger.logCommandExecution("publish-to-linkedin");
+
+    if (!this.settings.linkedinEnabled) {
+      new Notice("LinkedIn publishing is not enabled. Enable it in settings.");
+      return;
+    }
+
+    if (!this.settings.linkedinAccessToken) {
+      new Notice("Please configure your LinkedIn access token in settings.");
+      return;
+    }
+
+    if (!this.settings.linkedinPersonId) {
+      new Notice("Please configure your LinkedIn Person ID in settings.");
+      return;
+    }
+
+    const api = new LinkedInAPI(
+      this.settings.linkedinAccessToken,
+      this.settings.linkedinPersonId,
+    );
+
+    const composer = new LinkedInPostComposer(this.app, api, this.logger, {
+      defaultVisibility: this.settings.linkedinDefaultVisibility,
     });
     composer.open();
   }
@@ -681,6 +750,104 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
               });
           });
       }
+    }
+
+    // LinkedIn Section
+    new Setting(containerEl).setName("LinkedIn").setHeading();
+
+    new Setting(containerEl)
+      .setName("Enable LinkedIn")
+      .setDesc("Enable publishing to LinkedIn (shows LinkedIn button in ribbon)")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.linkedinEnabled)
+          .onChange(async (value) => {
+            this.plugin.settings.linkedinEnabled = value;
+            await this.plugin.saveSettings();
+            new Notice(
+              value
+                ? "LinkedIn enabled. Reload Obsidian to see the ribbon button."
+                : "LinkedIn disabled.",
+            );
+            this.display();
+          }),
+      );
+
+    if (this.plugin.settings.linkedinEnabled) {
+      new Setting(containerEl)
+        .setName("Access token")
+        .setDesc("LinkedIn API access token (OAuth2). Get one from LinkedIn Developer Portal.")
+        .addText((text) => {
+          text
+            .setPlaceholder("Enter access token")
+            .setValue(this.plugin.settings.linkedinAccessToken)
+            .onChange(async (value) => {
+              this.plugin.settings.linkedinAccessToken = value;
+              await this.plugin.saveSettings();
+            });
+          text.inputEl.type = "password";
+          text.inputEl.addClass("substack-input-full-width");
+        });
+
+      new Setting(containerEl)
+        .setName("Person ID")
+        .setDesc("Your LinkedIn person ID (found in your profile URL or via API)")
+        .addText((text) => {
+          text
+            .setPlaceholder("Enter person ID")
+            .setValue(this.plugin.settings.linkedinPersonId)
+            .onChange(async (value) => {
+              this.plugin.settings.linkedinPersonId = value;
+              await this.plugin.saveSettings();
+            });
+        });
+
+      new Setting(containerEl)
+        .setName("Default visibility")
+        .setDesc("Default visibility for LinkedIn posts")
+        .addDropdown((dropdown) => {
+          dropdown
+            .addOption("PUBLIC", "Public")
+            .addOption("CONNECTIONS", "Connections only")
+            .setValue(this.plugin.settings.linkedinDefaultVisibility)
+            .onChange(async (value) => {
+              this.plugin.settings.linkedinDefaultVisibility = value as LinkedInVisibility;
+              await this.plugin.saveSettings();
+            });
+        });
+
+      // Test connection button
+      new Setting(containerEl)
+        .setName("Test connection")
+        .setDesc("Test your LinkedIn API connection")
+        .addButton((button) => {
+          button.setButtonText("Test").onClick(async () => {
+            if (!this.plugin.settings.linkedinAccessToken || !this.plugin.settings.linkedinPersonId) {
+              new Notice("Please enter access token and person ID first.");
+              return;
+            }
+            button.setButtonText("...");
+            button.setDisabled(true);
+            try {
+              const api = new LinkedInAPI(
+                this.plugin.settings.linkedinAccessToken,
+                this.plugin.settings.linkedinPersonId,
+              );
+              const result = await api.testConnection();
+              if (result.success && result.data) {
+                new Notice(`Connected as: ${result.data.localizedFirstName} ${result.data.localizedLastName}`);
+              } else {
+                new Notice(`Connection failed: ${result.error}`);
+              }
+            } catch (error) {
+              const msg = error instanceof Error ? error.message : "Unknown error";
+              new Notice(`Error: ${msg}`);
+            } finally {
+              button.setButtonText("Test");
+              button.setDisabled(false);
+            }
+          });
+        });
     }
 
     new Setting(containerEl).setName("Advanced").setHeading();

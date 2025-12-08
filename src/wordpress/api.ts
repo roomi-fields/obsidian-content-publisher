@@ -1,3 +1,4 @@
+/* global URLSearchParams */
 import { requestUrl, RequestUrlResponse } from "obsidian";
 import {
   WordPressPagePayload,

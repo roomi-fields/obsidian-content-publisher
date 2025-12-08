@@ -429,3 +429,129 @@
     font-family: monospace;
     font-size: 12px;
 }
+
+/* LinkedIn Post Composer Modal styling */
+.linkedin-field-container {
+    margin-bottom: 1rem;
+}
+
+.linkedin-field-container label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    color: var(--text-normal);
+}
+
+.linkedin-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.linkedin-input:focus {
+    border-color: var(--interactive-accent);
+    outline: none;
+}
+
+.linkedin-select {
+    width: 100%;
+    padding: 8px 12px;
+    min-height: 36px;
+    line-height: 1.4;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 14px;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 16px;
+    padding-right: 32px;
+}
+
+.linkedin-select:focus {
+    border-color: var(--interactive-accent);
+    outline: none;
+}
+
+.linkedin-preview {
+    width: 100%;
+    min-height: 200px;
+    padding: 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background-color: var(--background-secondary);
+    font-size: 0.9em;
+    color: var(--text-normal);
+    resize: vertical;
+    font-family: inherit;
+}
+
+.linkedin-counter {
+    margin-top: 0.5rem;
+    font-size: 0.85em;
+    color: var(--text-muted);
+    text-align: right;
+}
+
+.linkedin-button-container {
+    display: flex;
+    gap: 10px;
+    margin-top: 1rem;
+}
+
+.linkedin-cancel-button {
+    flex: 1;
+    padding: 8px 16px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+}
+
+.linkedin-cancel-button:hover {
+    background-color: var(--background-secondary);
+}
+
+.linkedin-publish-button {
+    flex: 1;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    background-color: #0a66c2;
+    color: white;
+    cursor: pointer;
+}
+
+.linkedin-publish-button:hover {
+    background-color: #004182;
+}
+
+.linkedin-publish-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.linkedin-note-text {
+    margin-top: 1rem;
+    font-size: 0.9em;
+    color: var(--text-muted);
+}
+
+/* LinkedIn ribbon icon */
+.linkedin-ribbon-class {
+    color: var(--text-muted);
+    transition: color 0.2s ease;
+}
+
+.linkedin-ribbon-class:hover {
+    color: #0a66c2;
+}

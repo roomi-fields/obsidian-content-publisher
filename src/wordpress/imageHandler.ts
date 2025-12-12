@@ -279,13 +279,85 @@ export class WordPressImageHandler {
   }
 
   /**
+   * Process enluminure specified in frontmatter
+   * Uploads the image and returns enluminure info
+   */
+  private async processEnluminureFromFrontmatter(
+    enluminurePath: string,
+    basePath: string
+  ): Promise<WordPressEnluminureInfo | null> {
+    this.logger.debug(`Processing frontmatter enluminure: ${enluminurePath}`);
+
+    // Try multiple path resolutions:
+    // 1. First try as vault-root relative path (most common for frontmatter)
+    // 2. Then try as file-relative path
+    const pathsToTry = [
+      enluminurePath, // Vault root relative
+      this.resolveImagePath(enluminurePath, basePath) // File relative
+    ];
+
+    let uploadResult: {
+      success: boolean;
+      url?: string | undefined;
+      mediaId?: number | undefined;
+      error?: string | undefined;
+    } | null = null;
+
+    for (const vaultPath of pathsToTry) {
+      this.logger.debug(`Trying enluminure path: ${vaultPath}`);
+
+      // Check if file exists before trying to upload
+      const file = this.vault.getAbstractFileByPath(vaultPath);
+      if (!file || !(file instanceof TFile)) {
+        this.logger.debug(`File not found at: ${vaultPath}`);
+        continue;
+      }
+
+      uploadResult = await this.uploadImage(vaultPath);
+      if (uploadResult.success) {
+        this.logger.debug(`Successfully uploaded from: ${vaultPath}`);
+        break;
+      }
+    }
+
+    // If still not found, log all attempted paths
+    if (!uploadResult || !uploadResult.success) {
+      this.logger.error(`Failed to find/upload frontmatter enluminure. Tried: ${pathsToTry.join(", ")}`);
+      return null;
+    }
+
+    if (uploadResult.url && uploadResult.mediaId !== undefined) {
+      // Create a synthetic image reference for the enluminure
+      const imageRef: WordPressImageReference = {
+        fullMatch: enluminurePath,
+        alt: "Image enluminure",
+        path: enluminurePath,
+        isLocal: true
+      };
+
+      return {
+        imageRef,
+        lineIndex: 0,
+        wordpressUrl: uploadResult.url,
+        mediaId: uploadResult.mediaId
+      };
+    }
+
+    return null;
+  }
+
+  /**
    * Process all images in markdown content
    * Uploads local images to WordPress and replaces paths with WordPress URLs
    * Detects and handles enluminure images separately
+   * @param markdown - The markdown content
+   * @param basePath - Base path for resolving relative image paths
+   * @param frontmatterEnluminure - Optional enluminure path from frontmatter
    */
   async processMarkdownImages(
     markdown: string,
-    basePath: string
+    basePath: string,
+    frontmatterEnluminure?: string
   ): Promise<WordPressImageProcessingResult> {
     const references = this.parseImageReferences(markdown);
     const localImages = references.filter((ref) => ref.isLocal);
@@ -296,14 +368,50 @@ export class WordPressImageHandler {
     let processedMarkdown = markdown;
     let enluminureResult: WordPressEnluminureInfo | undefined = undefined;
 
-    // Detect enluminure first
-    const enluminureInfo = this.detectEnluminure(markdown);
+    // Handle frontmatter enluminure first (takes precedence)
+    if (frontmatterEnluminure) {
+      const enluminureUploadResult = await this.processEnluminureFromFrontmatter(
+        frontmatterEnluminure,
+        basePath
+      );
+      if (enluminureUploadResult) {
+        enluminureResult = enluminureUploadResult;
+        uploadedImages.push({
+          originalPath: frontmatterEnluminure,
+          wordpressUrl: enluminureUploadResult.wordpressUrl || "",
+          mediaId: enluminureUploadResult.mediaId || 0
+        });
+        this.logger.info(`Uploaded frontmatter enluminure: ${frontmatterEnluminure}`);
+      }
+    }
+
+    // Detect enluminure in content (only if not already from frontmatter)
+    const enluminureInfo = !enluminureResult ? this.detectEnluminure(markdown) : null;
+
+    // Normalize frontmatter enluminure path for comparison
+    const normalizedFrontmatterEnluminure = frontmatterEnluminure
+      ? frontmatterEnluminure.toLowerCase().replace(/\\/g, "/")
+      : null;
 
     // Process each local image
     for (const ref of localImages) {
-      // Check if this is an enluminure image
+      // Check if this is an enluminure image (detected in content)
       const isEnluminure =
         enluminureInfo && ref.fullMatch === enluminureInfo.imageRef.fullMatch;
+
+      // Check if this image matches the frontmatter enluminure (should be removed from content)
+      const normalizedRefPath = ref.path.toLowerCase().replace(/\\/g, "/");
+      const matchesFrontmatterEnluminure = normalizedFrontmatterEnluminure &&
+        (normalizedRefPath === normalizedFrontmatterEnluminure ||
+         normalizedRefPath.endsWith(normalizedFrontmatterEnluminure) ||
+         normalizedFrontmatterEnluminure.endsWith(normalizedRefPath));
+
+      // If this image matches the frontmatter enluminure, remove it from content and skip
+      if (matchesFrontmatterEnluminure) {
+        this.logger.debug(`Removing duplicate enluminure from content: ${ref.path}`);
+        processedMarkdown = processedMarkdown.replace(ref.fullMatch, "");
+        continue;
+      }
 
       // Resolve path based on whether it's a wikilink or standard markdown
       let vaultPath: string;

@@ -954,7 +954,8 @@ class WordPressServerEditModal extends Modal {
     super(app);
     this.server = server;
     this.onSave = onSave;
-    this.editedServer = { ...server };
+    // Deep copy to avoid modifying the original server before save
+    this.editedServer = JSON.parse(JSON.stringify(server));
   }
 
   override onOpen() {

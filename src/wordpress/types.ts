@@ -2,6 +2,9 @@
  * WordPress API types
  */
 
+// WordPress content type (page or article/post)
+export type WordPressContentType = "page" | "article";
+
 // WordPress post/page status
 export type WordPressPostStatus =
   | "publish"
@@ -184,6 +187,14 @@ export interface WordPressFrontmatter {
   excerpt?: string;
   tags?: string[];
   focus_keyword?: string;
+  // Enluminure image path (drop cap image)
+  enluminure?: string;
+  // Content type: page or article
+  type?: WordPressContentType;
+  // WordPress URLs (set after publication)
+  wordpress_url?: string;
+  wordpress_id?: number;
+  wordpress_slug?: string;
 }
 
 // Enluminure info for WordPress

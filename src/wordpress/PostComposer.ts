@@ -12,7 +12,8 @@ import {
   WordPressServer,
   BilingualContent,
   LanguageContent,
-  PolylangLanguage
+  PolylangLanguage,
+  WordPressContentType
 } from "./types";
 import {
   isBilingualContent,
@@ -40,10 +41,16 @@ export class WordPressPostComposer extends Modal {
   private servers: WordPressServer[];
   private currentServer: WordPressServer;
   private categorySelectEl: HTMLSelectElement | null = null;
+  private categoryContainerEl: HTMLElement | null = null;
   // Bilingual support
   private bilingualContent: BilingualContent | null = null;
   private isBilingual: boolean = false;
   private rawContent: string = "";
+  // Content type (page or article)
+  private contentType: WordPressContentType | null = null;
+  private contentTypeSelectEl: HTMLSelectElement | null = null;
+  private existingPostId: number | null = null;
+  private existingPageId: number | null = null;
 
   constructor(
     app: App,
@@ -72,11 +79,7 @@ export class WordPressPostComposer extends Modal {
       this.currentServer.password
     );
 
-    this.wikiLinkConverter = new WikiLinkConverter(
-      this.api,
-      this.categoryPageIds,
-      logger
-    );
+    this.wikiLinkConverter = new WikiLinkConverter(app, logger);
     this.imageHandler = new WordPressImageHandler(this.api, app.vault, logger);
   }
 
@@ -92,11 +95,7 @@ export class WordPressPostComposer extends Modal {
       server.password
     );
 
-    this.wikiLinkConverter = new WikiLinkConverter(
-      this.api,
-      this.categoryPageIds,
-      this.logger
-    );
+    // WikiLinkConverter doesn't depend on server, no need to recreate
     this.imageHandler = new WordPressImageHandler(this.api, this.app.vault, this.logger);
 
     // Update category dropdown with Polylang filtering
@@ -132,10 +131,17 @@ export class WordPressPostComposer extends Modal {
     // Check for bilingual content
     await this.detectBilingualContent();
 
-    // Title - indicate if bilingual
-    const titleText = this.isBilingual
-      ? "Publish to WordPress (Bilingual 🇫🇷/🇬🇧)"
-      : "Publish to WordPress";
+    // Detect content type and check for existing content
+    await this.detectContentTypeAndExisting();
+
+    // Title - indicate if bilingual and content type
+    let titleText = "Publish to WordPress";
+    if (this.isBilingual) {
+      titleText = "Publish to WordPress (Bilingual 🇫🇷/🇬🇧)";
+    }
+    if (this.existingPostId || this.existingPageId) {
+      titleText = "Update WordPress Content";
+    }
     contentEl.createEl("h2", { text: titleText });
 
     // Server selector (if multiple servers)
@@ -168,11 +174,12 @@ export class WordPressPostComposer extends Modal {
       });
     }
 
-    // Category selector
+    // Category selector (only visible for articles)
     if (this.categories.length > 0) {
       const categoryContainer = contentEl.createDiv({
         cls: "wordpress-field-container"
       });
+      this.categoryContainerEl = categoryContainer;
 
       categoryContainer.createEl("label", { text: "Category" });
 
@@ -262,6 +269,52 @@ export class WordPressPostComposer extends Modal {
       this.title = titleInput.value;
     });
 
+    // Content type selector (only show if not already set and not an update)
+    if (!this.frontmatter.type && !this.existingPostId && !this.existingPageId) {
+      const typeContainer = contentEl.createDiv({
+        cls: "wordpress-field-container"
+      });
+      typeContainer.createEl("label", { text: "Type" });
+
+      const typeSelect = typeContainer.createEl("select", {
+        cls: "wordpress-select"
+      });
+      this.contentTypeSelectEl = typeSelect;
+
+      const articleOption = typeSelect.createEl("option", {
+        text: "Article",
+        value: "article"
+      });
+      articleOption.selected = true;
+      this.contentType = "article";
+
+      typeSelect.createEl("option", {
+        text: "Page",
+        value: "page"
+      });
+
+      typeSelect.addEventListener("change", () => {
+        this.contentType = typeSelect.value as WordPressContentType;
+        this.updateCategoryVisibility();
+      });
+    } else {
+      // Type is already set
+      this.contentType = this.frontmatter.type || (this.existingPageId ? "page" : "article");
+    }
+
+    // Hide category for pages
+    this.updateCategoryVisibility();
+
+    // Show type info if already set
+    if (this.frontmatter.type || this.existingPostId || this.existingPageId) {
+      const typeInfo = contentEl.createDiv({
+        cls: "wordpress-type-info"
+      });
+      const typeLabel = this.contentType === "page" ? "Page" : "Article";
+      const isUpdate = this.existingPostId || this.existingPageId;
+      typeInfo.setText(`Type: ${typeLabel}${isUpdate ? " (updating existing)" : ""}`);
+    }
+
     // Buttons
     const buttonContainer = contentEl.createDiv({
       cls: "wordpress-button-container"
@@ -293,10 +346,89 @@ export class WordPressPostComposer extends Modal {
     });
 
     // Note
+    const noteText = this.contentType === "page"
+      ? "The active note will be converted and published as a WordPress page."
+      : "The active note will be converted and published as a WordPress article.";
     contentEl.createEl("div", {
-      text: "The active note will be converted and published as a WordPress article.",
+      text: noteText,
       cls: "wordpress-note-text"
     });
+  }
+
+  /**
+   * Detect content type from frontmatter and check for existing content on WordPress
+   */
+  private async detectContentTypeAndExisting(): Promise<void> {
+    // First, check if type is already in frontmatter
+    if (this.frontmatter.type) {
+      this.contentType = this.frontmatter.type;
+      this.logger.debug("Content type from frontmatter", { type: this.contentType });
+    }
+
+    // Check if we have a WordPress ID (update scenario)
+    if (this.frontmatter.wordpress_id) {
+      // Determine type from existing content
+      if (this.frontmatter.type === "page") {
+        this.existingPageId = this.frontmatter.wordpress_id;
+      } else {
+        this.existingPostId = this.frontmatter.wordpress_id;
+      }
+      this.logger.debug("Found existing WordPress ID", {
+        id: this.frontmatter.wordpress_id,
+        type: this.frontmatter.type
+      });
+      return;
+    }
+
+    // If no type set, try to find existing content by title
+    if (!this.frontmatter.type && this.title) {
+      try {
+        // Check for existing post
+        const existingPost = await this.api.findPostByTitle(this.title);
+        if (existingPost.success && existingPost.data) {
+          this.existingPostId = existingPost.data.id;
+          this.contentType = "article";
+          this.logger.info("Found existing article", {
+            id: existingPost.data.id,
+            title: this.title
+          });
+          return;
+        }
+
+        // Check for existing page
+        const existingPage = await this.api.findPageByTitle(this.title);
+        if (existingPage.success && existingPage.data) {
+          this.existingPageId = existingPage.data.id;
+          this.contentType = "page";
+          this.logger.info("Found existing page", {
+            id: existingPage.data.id,
+            title: this.title
+          });
+          return;
+        }
+      } catch (error) {
+        this.logger.warn("Error checking for existing content", error);
+      }
+    }
+  }
+
+  /**
+   * Update category selector visibility based on content type
+   * Categories are only relevant for articles, not pages
+   */
+  private updateCategoryVisibility(): void {
+    if (!this.categoryContainerEl) return;
+
+    const effectiveType = this.contentTypeSelectEl
+      ? (this.contentTypeSelectEl.value as WordPressContentType)
+      : this.contentType;
+
+    if (effectiveType === "page") {
+      this.categoryContainerEl.style.display = "none";
+    } else {
+      this.categoryContainerEl.style.display = "";
+    }
+    this.logger.debug("Category visibility updated", { type: effectiveType });
   }
 
   /**
@@ -384,6 +516,26 @@ export class WordPressPostComposer extends Modal {
       if (typeof fm.focus_keyword === "string") {
         parsed.focus_keyword = fm.focus_keyword;
       }
+      // Parse enluminure path
+      if (typeof fm.enluminure === "string") {
+        parsed.enluminure = fm.enluminure;
+        this.logger.debug("Found frontmatter enluminure", { enluminure: fm.enluminure });
+      }
+      // Parse content type (page or article)
+      if (fm.type === "page" || fm.type === "article") {
+        parsed.type = fm.type;
+        this.logger.debug("Found frontmatter type", { type: fm.type });
+      }
+      // Parse existing WordPress IDs (for updates)
+      if (typeof fm.wordpress_id === "number") {
+        parsed.wordpress_id = fm.wordpress_id;
+      }
+      if (typeof fm.wordpress_url === "string") {
+        parsed.wordpress_url = fm.wordpress_url;
+      }
+      if (typeof fm.wordpress_slug === "string") {
+        parsed.wordpress_slug = fm.wordpress_slug;
+      }
 
       this.frontmatter = parsed;
       this.logger.debug("Parsed frontmatter", { parsed });
@@ -435,10 +587,12 @@ export class WordPressPostComposer extends Modal {
 
     // Process images - upload local images to WordPress
     // This also detects and uploads enluminure separately
+    // Enluminure can be specified in frontmatter or detected in content
     const basePath = activeFile.parent?.path || "";
     const imageResult = await this.imageHandler.processMarkdownImages(
       cleanContent,
-      basePath
+      basePath,
+      this.frontmatter.enluminure
     );
 
     // Notify user of image upload results
@@ -461,7 +615,12 @@ export class WordPressPostComposer extends Modal {
     cleanContent = imageResult.processedMarkdown;
 
     // Process wikilinks - convert to WordPress internal links
-    cleanContent = await this.wikiLinkConverter.processWikiLinks(cleanContent);
+    const wikiLinkResult = this.wikiLinkConverter.processWikiLinks(cleanContent);
+    cleanContent = wikiLinkResult.processed;
+
+    if (wikiLinkResult.unresolved.length > 0) {
+      this.logger.warn(`Unresolved wikilinks: ${wikiLinkResult.unresolved.join(", ")}`);
+    }
 
     // Convert markdown to HTML
     const html = this.markdownToHtml(cleanContent);
@@ -476,13 +635,12 @@ export class WordPressPostComposer extends Modal {
    * Generate the enluminure HTML structure matching the working WordPress pages
    * Creates the medieval drop-cap effect with image floated left
    *
-   * Note: The H1 title is KEPT in the content with its first letter removed.
-   * The first letter is represented by the enluminure image (drop cap effect).
-   * WordPress's automatic title display should be hidden via theme CSS.
+   * Note: The H1 title has its first letter wrapped in screen-reader-text span
+   * for SEO, while the enluminure image serves as the visual drop cap.
+   * WordPress's automatic title display should be hidden via theme CSS/PHP.
    *
    * IMPORTANT: Uses inline styles with !important to override theme CSS
    * WordPress sanitizes <style> tags, so we must use inline styles directly on elements
-   * The alignwide class bypasses WordPress theme centering
    */
   private generateEnluminureHtml(
     enluminure: WordPressEnluminureInfo,
@@ -491,21 +649,19 @@ export class WordPressPostComposer extends Modal {
   ): string {
     const enluminureUrl = enluminure.wordpressUrl || "";
 
-    // Keep H1 but remove the first letter (shown as enluminure drop cap)
-    // Match H1, capture attributes and content, then remove first letter from content
+    // Process H1: wrap first letter in screen-reader-text span for SEO
+    // and add inline styles for proper layout
     const processedBodyHtml = bodyHtml.replace(
       /<h1([^>]*)>(.+?)<\/h1>/i,
-      (match, attrs, content) => {
-        // Remove leading whitespace and first character from title
+      (_match, attrs, content) => {
         const trimmedContent = content.trim();
-        const titleWithoutFirstLetter = trimmedContent.slice(1);
-        return `<h1${attrs}>${titleWithoutFirstLetter}</h1>`;
+        const firstLetter = trimmedContent.charAt(0);
+        const restOfTitle = trimmedContent.slice(1);
+        return `<h1${attrs} style="margin-top: 0 !important; margin-bottom: 1rem !important; clear: none !important;"><span class="screen-reader-text">${firstLetter}</span>${restOfTitle}</h1>`;
       }
     );
 
-    // Keep H3 subtitle if present (no changes needed)
-
-    // Add inline styles to all h2 and h3 elements to prevent clearing
+    // Add inline styles to h2 and h3 elements to prevent clearing
     const finalBodyHtml = processedBodyHtml
       .replace(
         /<h2([^>]*)>/g,
@@ -519,11 +675,10 @@ export class WordPressPostComposer extends Modal {
     // Build the enluminure structure with:
     // 1. NO <style> tag - WordPress sanitizes it away
     // 2. Inline styles directly on elements with !important to override theme CSS
-    // 3. alignwide class to bypass theme's .entry-content > * centering
-    // 4. clear: none !important to override theme's .alignwide { clear: both }
-    return `<div class="enluminure-container alignwide" style="position: relative; margin-bottom: 2rem; clear: none !important; max-width: 900px;">
-<div class="enluminure-image-article" style="float: left !important; margin: 0 1rem 1.5rem 0 !important; max-width: 200px !important;">
-<img src="${enluminureUrl}" alt="Image enluminure" style="display: block !important; width: 100% !important; height: auto !important; border-radius: 0.25rem;">
+    // 3. screen-reader-text span for SEO (first letter hidden visually but readable by screen readers)
+    return `<div class="enluminure-container" style="position: relative; margin-bottom: 2rem; max-width: 900px;">
+<div class="enluminure-image-article" style="float: left !important; margin: 0 !important; max-width: 200px !important;">
+<img src="${enluminureUrl}" alt="Image enluminure" style="display: block !important; width: 100% !important; height: auto !important;">
 </div>
 ${finalBodyHtml}
 </div>`;
@@ -644,7 +799,13 @@ ${finalBodyHtml}
       return;
     }
 
-    if (!this.category) {
+    // Get the effective content type (from selector if shown, or from detection)
+    const effectiveContentType = this.contentTypeSelectEl
+      ? (this.contentTypeSelectEl.value as WordPressContentType)
+      : this.contentType || "article";
+
+    // Category is required for articles only
+    if (effectiveContentType === "article" && !this.category) {
       new Notice("Please select a category");
       return;
     }
@@ -667,11 +828,6 @@ ${finalBodyHtml}
     }
 
     try {
-      const categoryId = this.categoryPageIds[this.category];
-      if (categoryId === undefined) {
-        throw new Error(`Invalid category: ${this.category}`);
-      }
-
       // Build final HTML content
       let finalHtml: string;
       if (contentResult.enluminure && contentResult.enluminure.wordpressUrl) {
@@ -685,6 +841,18 @@ ${finalBodyHtml}
       } else {
         // No enluminure - use content as-is
         finalHtml = contentResult.html;
+      }
+
+      // ===== PAGE PUBLICATION =====
+      if (effectiveContentType === "page") {
+        await this.savePageToWordPress(finalHtml, status, contentResult.enluminure);
+        return;
+      }
+
+      // ===== ARTICLE PUBLICATION =====
+      const categoryId = this.categoryPageIds[this.category];
+      if (categoryId === undefined) {
+        throw new Error(`Invalid category: ${this.category}`);
       }
 
       // Prepare SEO options
@@ -702,10 +870,11 @@ ${finalBodyHtml}
       if (this.frontmatter.excerpt) {
         seoOptions.excerpt = this.frontmatter.excerpt;
       }
-      // NOTE: We intentionally do NOT set featured_media when there's an enluminure
-      // because the enluminure is already embedded in the content HTML.
-      // Setting featured_media would cause WordPress to display the image twice:
-      // once as the featured image (theme-controlled) and once in our custom layout.
+      // Set featured_media from enluminure if available
+      // This is used for WordPress thumbnails, social sharing previews, etc.
+      if (contentResult.enluminure?.mediaId) {
+        seoOptions.featuredMediaId = contentResult.enluminure.mediaId;
+      }
 
       // Build Rank Math SEO meta
       const rankMathMeta: RankMathMeta = {};
@@ -755,17 +924,20 @@ ${finalBodyHtml}
         seoOptions
       });
 
-      // Check if article already exists
-      const existingPost = await this.api.findPostByTitle(
-        this.title,
-        categoryId
-      );
+      // Check if article already exists (use detected ID or search)
+      let existingId = this.existingPostId;
+      if (!existingId) {
+        const existingPost = await this.api.findPostByTitle(this.title, categoryId);
+        if (existingPost.success && existingPost.data) {
+          existingId = existingPost.data.id;
+        }
+      }
 
       let result;
-      if (existingPost.success && existingPost.data) {
+      if (existingId) {
         // Update existing article
-        this.logger.info(`Updating existing article: ${existingPost.data.id}`);
-        result = await this.api.updatePost(existingPost.data.id, {
+        this.logger.info(`Updating existing article: ${existingId}`);
+        result = await this.api.updatePost(existingId, {
           title: this.title,
           content: finalHtml,
           status,
@@ -787,8 +959,7 @@ ${finalBodyHtml}
       }
 
       if (result.success && result.data) {
-        const action =
-          existingPost.success && existingPost.data ? "Updated" : "Created";
+        const action = existingId ? "Updated" : "Created";
         const statusText = status === "publish" ? "published" : "draft";
         this.logger.info(
           `${action} article: ${result.data.link} (${statusText})`
@@ -797,24 +968,13 @@ ${finalBodyHtml}
           `${action} ${statusText}: ${this.title}\n${result.data.link}`
         );
 
-        // Update frontmatter with WordPress URL
-        if (this.activeFile) {
-          try {
-            await this.app.fileManager.processFrontMatter(
-              this.activeFile,
-              (frontmatter) => {
-                frontmatter.wordpress_url = result.data?.link;
-              }
-            );
-            this.logger.info(
-              "Updated frontmatter with WordPress URL",
-              { url: result.data.link }
-            );
-          } catch (error) {
-            this.logger.warn("Failed to update frontmatter", error);
-            // Don't show error to user - the publish succeeded
-          }
-        }
+        // Update frontmatter with WordPress info
+        await this.updateFrontmatterAfterPublish(
+          "article",
+          result.data.id,
+          result.data.link,
+          result.data.slug
+        );
 
         this.close();
       } else {
@@ -826,6 +986,226 @@ ${finalBodyHtml}
         error instanceof Error ? error.message : String(error);
       new Notice(`Failed to save: ${errorMessage}`);
       this.setButtonsDisabled(false);
+    }
+  }
+
+  /**
+   * Save content as a WordPress page
+   */
+  private async savePageToWordPress(
+    finalHtml: string,
+    status: WordPressPostStatus,
+    enluminure?: WordPressEnluminureInfo
+  ): Promise<void> {
+    try {
+      this.logger.debug("Publishing page to WordPress", {
+        title: this.title,
+        status,
+        hasEnluminure: !!enluminure,
+        existingPageId: this.existingPageId
+      });
+
+      // Check if page already exists (use detected ID or search)
+      let existingId = this.existingPageId;
+      if (!existingId) {
+        const existingPage = await this.api.findPageByTitle(this.title);
+        if (existingPage.success && existingPage.data) {
+          existingId = existingPage.data.id;
+        }
+      }
+
+      let result;
+      if (existingId) {
+        // Update existing page
+        this.logger.info(`Updating existing page: ${existingId}`);
+        result = await this.api.updatePage(existingId, {
+          title: this.title,
+          content: finalHtml,
+          status,
+          slug: this.frontmatter.slug,
+          excerpt: this.frontmatter.excerpt
+        });
+      } else {
+        // Create new page
+        result = await this.api.createPage(
+          this.title,
+          finalHtml,
+          undefined, // No parent ID for now
+          status
+        );
+      }
+
+      if (result.success && result.data) {
+        const action = existingId ? "Updated" : "Created";
+        const statusText = status === "publish" ? "published" : "draft";
+        this.logger.info(
+          `${action} page: ${result.data.link} (${statusText})`
+        );
+        new Notice(
+          `${action} page ${statusText}: ${this.title}\n${result.data.link}`
+        );
+
+        // Update frontmatter with WordPress info
+        await this.updateFrontmatterAfterPublish(
+          "page",
+          result.data.id,
+          result.data.link,
+          result.data.slug
+        );
+
+        this.close();
+      } else {
+        throw new Error(result.error || "Failed to save page");
+      }
+    } catch (error) {
+      this.logger.error("Failed to publish page to WordPress", error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      new Notice(`Failed to save page: ${errorMessage}`);
+      this.setButtonsDisabled(false);
+    }
+  }
+
+  /**
+   * Update frontmatter after successful publication
+   * Sets type, wordpress_id, wordpress_url, and wordpress_slug
+   * Also checks for backlinks that need updating
+   */
+  private async updateFrontmatterAfterPublish(
+    type: WordPressContentType,
+    wordpressId: number,
+    wordpressUrl: string,
+    wordpressSlug: string
+  ): Promise<void> {
+    if (!this.activeFile) return;
+
+    try {
+      await this.app.fileManager.processFrontMatter(
+        this.activeFile,
+        (frontmatter) => {
+          frontmatter.type = type;
+          frontmatter.wordpress_id = wordpressId;
+          frontmatter.wordpress_url = wordpressUrl;
+          frontmatter.wordpress_slug = wordpressSlug;
+        }
+      );
+      this.logger.info("Updated frontmatter with WordPress info", {
+        type,
+        wordpressId,
+        wordpressUrl,
+        wordpressSlug
+      });
+
+      // Check for published backlinks that might need updating
+      await this.checkAndUpdateBacklinks();
+    } catch (error) {
+      this.logger.warn("Failed to update frontmatter", error);
+      // Don't show error to user - the publish succeeded
+    }
+  }
+
+  /**
+   * Check for published notes that link to this file and offer to update them
+   * This ensures backlinks are resolved after publishing a new article
+   */
+  private async checkAndUpdateBacklinks(): Promise<void> {
+    if (!this.activeFile) return;
+
+    const backlinks = this.wikiLinkConverter.findPublishedBacklinks(this.activeFile);
+
+    if (backlinks.length === 0) {
+      this.logger.debug("No published backlinks to update");
+      return;
+    }
+
+    this.logger.info(`Found ${backlinks.length} published backlink(s) that may need updating`);
+
+    // Show notice to user
+    const backlinkNames = backlinks.map(b => b.file.basename).join(", ");
+    new Notice(
+      `${backlinks.length} article(s) publiés référencent "${this.activeFile.basename}":\n${backlinkNames}\n\nVoulez-vous les mettre à jour ?`,
+      10000
+    );
+
+    // For now, just log. In a future version, we could:
+    // 1. Show a modal asking if user wants to update backlinks
+    // 2. Re-publish each backlinked article automatically
+    // 3. Add a command to "Update all backlinks"
+
+    // Auto-update backlinks (if they have wordpress_id)
+    for (const backlink of backlinks) {
+      if (!backlink.wordpressId) {
+        this.logger.warn(`Backlink ${backlink.file.basename} has no wordpress_id, skipping update`);
+        continue;
+      }
+
+      try {
+        await this.updateBacklinkArticle(backlink.file, backlink.wordpressId);
+      } catch (error) {
+        this.logger.error(`Failed to update backlink ${backlink.file.basename}`, error);
+      }
+    }
+  }
+
+  /**
+   * Update a single backlinked article on WordPress
+   * Re-processes its content to resolve the newly published link
+   */
+  private async updateBacklinkArticle(file: TFile, wordpressId: number): Promise<void> {
+    this.logger.info(`Updating backlink article: ${file.basename} (ID: ${wordpressId})`);
+
+    // Read file content
+    const content = await this.app.vault.cachedRead(file);
+
+    // Remove frontmatter
+    let cleanContent = content.replace(/^---[\s\S]*?---\n?/, "");
+
+    // Process images - get enluminure from frontmatter if present
+    const basePath = file.parent?.path || "";
+    const fileCache = this.app.metadataCache.getFileCache(file);
+    const fileEnluminure = fileCache?.frontmatter?.enluminure;
+    const imageResult = await this.imageHandler.processMarkdownImages(
+      cleanContent,
+      basePath,
+      typeof fileEnluminure === "string" ? fileEnluminure : undefined
+    );
+    cleanContent = imageResult.processedMarkdown;
+
+    // Process wikilinks (this will now resolve the newly published link)
+    const wikiLinkResult = this.wikiLinkConverter.processWikiLinks(cleanContent);
+    cleanContent = wikiLinkResult.processed;
+
+    // Convert to HTML
+    let finalHtml = this.markdownToHtml(cleanContent);
+
+    // Handle enluminure if present
+    if (imageResult.enluminure?.wordpressUrl) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const title = cache?.frontmatter?.title || file.basename;
+      finalHtml = this.generateEnluminureHtml(imageResult.enluminure, title, finalHtml);
+    }
+
+    // Get frontmatter to determine type
+    const cache = this.app.metadataCache.getFileCache(file);
+    const isPage = cache?.frontmatter?.type === "page";
+
+    // Update on WordPress
+    if (isPage) {
+      const result = await this.api.updatePage(wordpressId, { content: finalHtml });
+      if (result.success) {
+        this.logger.info(`Updated backlink page: ${file.basename}`);
+        new Notice(`Mis à jour: ${file.basename}`);
+      } else {
+        throw new Error(result.error || "Update failed");
+      }
+    } else {
+      const result = await this.api.updatePost(wordpressId, { content: finalHtml });
+      if (result.success) {
+        this.logger.info(`Updated backlink article: ${file.basename}`);
+        new Notice(`Mis à jour: ${file.basename}`);
+      } else {
+        throw new Error(result.error || "Update failed");
+      }
     }
   }
 
@@ -1013,16 +1393,18 @@ ${finalBodyHtml}
 
     let markdown = langContent.content;
 
-    // Process images
+    // Process images - enluminure can be specified in the language content
     const basePath = this.activeFile.parent?.path || "";
     const imageResult = await this.imageHandler.processMarkdownImages(
       markdown,
-      basePath
+      basePath,
+      langContent.enluminure
     );
     markdown = imageResult.processedMarkdown;
 
     // Process wikilinks
-    markdown = await this.wikiLinkConverter.processWikiLinks(markdown);
+    const wikiLinkResult = this.wikiLinkConverter.processWikiLinks(markdown);
+    markdown = wikiLinkResult.processed;
 
     // Convert to HTML
     const html = this.markdownToHtml(markdown);

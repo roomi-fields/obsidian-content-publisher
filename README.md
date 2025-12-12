@@ -19,7 +19,7 @@
 | Platform | Status | Features |
 |----------|--------|----------|
 | **Substack** | ✅ | Draft/publish, images, audience targeting, sections |
-| **WordPress** | ✅ | Multi-server, categories, tags, Rank Math SEO |
+| **WordPress** | ✅ | Multi-server, categories, tags, Rank Math SEO, Polylang |
 | **LinkedIn** | 🚧 | Coming soon |
 
 See [PLATFORMS.md](./docs/PLATFORMS.md) for detailed setup and frontmatter documentation.
@@ -41,6 +41,8 @@ See [PLATFORMS.md](./docs/PLATFORMS.md) for detailed setup and frontmatter docum
 - **Categories & Tags** — Auto-fetch categories, create tags on the fly
 - **SEO Integration** — Rank Math meta fields support
 - **Wikilinks** — Automatic conversion to WordPress internal links
+- **Drop Cap Images** — Decorative initial images (see [Advanced Features](#advanced-features))
+- **Bilingual Publishing** — FR/EN with Polylang (see [Advanced Features](#advanced-features))
 
 ### General
 - **Markdown Conversion** — Full conversion to platform formats
@@ -93,6 +95,67 @@ See [PLATFORMS.md](./docs/PLATFORMS.md) for detailed setup and frontmatter docum
 5. **Publish** or save as draft
 
 See [PLATFORMS.md](./docs/PLATFORMS.md) for frontmatter examples and platform-specific options.
+
+---
+
+## Advanced Features
+
+These optional features activate automatically when specific patterns are detected in your content.
+
+### Drop Cap Images (WordPress)
+
+Add decorative initial images (medieval manuscript style) to your WordPress posts. The image floats left as a visual drop cap while the first letter remains in the HTML for SEO.
+
+**Usage:** Name your image file with `enluminure` in the path:
+
+```markdown
+![[Assets/enluminure-A.png]]
+
+Your article content starts here...
+```
+
+Or specify in frontmatter:
+
+```yaml
+---
+enluminure: Assets/drop-caps/letter-A.png
+---
+```
+
+The image will be:
+- Uploaded to WordPress
+- Positioned as a floating drop cap (200px max-width)
+- Set as the featured image and Open Graph image (Rank Math)
+- Removed from inline content to avoid duplication
+
+> **Note:** This feature only activates when "enluminure" appears in an image path. Regular images are unaffected.
+
+### Bilingual Publishing (WordPress + Polylang)
+
+Publish French and English versions of your content simultaneously using the [Polylang](https://polylang.pro/) plugin.
+
+**1. Enable in Settings:**
+- Go to WordPress server settings
+- Enable "Polylang" in the Multilingual section
+- Configure category mappings for each language
+
+**2. Write bilingual content using callouts:**
+
+```markdown
+> [!info]- 🇫🇷 Titre français
+> Votre contenu en français ici.
+>
+> Plusieurs paragraphes sont supportés.
+
+> [!info]- 🇬🇧 English Title
+> Your English content here.
+>
+> Multiple paragraphs are supported.
+```
+
+**3. Publish:** The plugin will create two linked WordPress posts (one FR, one EN) with proper Polylang language tags.
+
+> **Note:** This feature only activates when both 🇫🇷 and 🇬🇧 callouts are present and Polylang is enabled.
 
 ---
 

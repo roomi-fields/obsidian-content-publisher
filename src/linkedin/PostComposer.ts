@@ -227,7 +227,7 @@ export class LinkedInPostComposer extends Modal {
         cls: "linkedin-draft-notice"
       });
       draftNotice.createEl("span", {
-        text: "📝 Draft found — ",
+        text: "A draft already exists — ",
         cls: "linkedin-draft-notice-text"
       });
       const publishDraftBtn = draftNotice.createEl("button", {

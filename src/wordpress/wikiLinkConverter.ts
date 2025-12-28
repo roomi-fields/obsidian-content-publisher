@@ -70,7 +70,8 @@ export class WikiLinkConverter {
   }
 
   /**
-   * Find WordPress URL for a wikilink by looking up the target note's frontmatter
+   * Find published URL for a wikilink by looking up the target note's frontmatter
+   * Priority: wordpress_url > wordpress_url_fr > substack_url
    * Uses Obsidian's metadata cache for fast local resolution
    */
   findWordPressUrl(linkText: string): string | null {
@@ -95,18 +96,25 @@ export class WikiLinkConverter {
       return null;
     }
 
-    // Check for wordpress_url (single language or article)
-    // Also check wordpress_url_fr for bilingual content (default to FR)
     const fm = cache.frontmatter;
-    const wordpressUrl = fm.wordpress_url || fm.wordpress_url_fr;
 
+    // Priority 1: WordPress URL (single language or FR for bilingual)
+    const wordpressUrl = fm.wordpress_url || fm.wordpress_url_fr;
     if (wordpressUrl && typeof wordpressUrl === "string") {
       this.logger.debug(`Found wordpress_url for "${linkText}": ${wordpressUrl}`);
       this.linkCache.set(linkText, wordpressUrl);
       return wordpressUrl;
     }
 
-    this.logger.debug(`No wordpress_url in frontmatter for: ${linkText}`);
+    // Priority 2: Substack URL (fallback)
+    const substackUrl = fm.substack_url;
+    if (substackUrl && typeof substackUrl === "string") {
+      this.logger.debug(`Found substack_url for "${linkText}": ${substackUrl}`);
+      this.linkCache.set(linkText, substackUrl);
+      return substackUrl;
+    }
+
+    this.logger.debug(`No published URL in frontmatter for: ${linkText}`);
     return null;
   }
 
@@ -146,13 +154,18 @@ export class WikiLinkConverter {
   }
 
   /**
-   * Convert a single wikilink to HTML anchor tag
+   * Convert a single wikilink to HTML anchor tag or markdown link
+   * @param wikiLink The parsed wikilink
+   * @param outputFormat 'html' for <a href>, 'markdown' for [text](url)
    */
-  convertWikiLink(wikiLink: WordPressWikiLink): string {
+  convertWikiLink(wikiLink: WordPressWikiLink, outputFormat: "html" | "markdown" = "html"): string {
     const url = this.findWordPressUrl(wikiLink.linkText);
 
     if (url) {
       const displayText = wikiLink.displayText || wikiLink.linkText;
+      if (outputFormat === "markdown") {
+        return `[${displayText}](${url})`;
+      }
       return `<a href="${url}">${displayText}</a>`;
     }
 
@@ -163,10 +176,12 @@ export class WikiLinkConverter {
 
   /**
    * Process all wikilinks in markdown content
-   * Returns the markdown with wikilinks replaced by HTML links or plain text
+   * Returns the markdown with wikilinks replaced by links or plain text
    * Also returns info about unresolved links for potential backlink updates
+   * @param markdown The content to process
+   * @param outputFormat 'html' for <a href>, 'markdown' for [text](url)
    */
-  processWikiLinks(markdown: string): {
+  processWikiLinks(markdown: string, outputFormat: "html" | "markdown" = "html"): {
     processed: string;
     resolved: Array<{ linkText: string; url: string }>;
     unresolved: string[];
@@ -189,9 +204,12 @@ export class WikiLinkConverter {
       if (url) {
         resolved.push({ linkText: wikiLink.linkText, url });
         const displayText = wikiLink.displayText || wikiLink.linkText;
+        const replacement = outputFormat === "markdown"
+          ? `[${displayText}](${url})`
+          : `<a href="${url}">${displayText}</a>`;
         processedMarkdown = processedMarkdown.replace(
           wikiLink.fullMatch,
-          `<a href="${url}">${displayText}</a>`
+          replacement
         );
       } else {
         unresolved.push(wikiLink.linkText);

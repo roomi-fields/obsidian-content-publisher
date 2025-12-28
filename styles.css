@@ -555,3 +555,14 @@
 .linkedin-ribbon-class:hover {
     color: #0a66c2;
 }
+
+/* LinkedIn checkbox inline */
+.linkedin-checkbox-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.linkedin-checkbox-label {
+    margin: 0;
+}

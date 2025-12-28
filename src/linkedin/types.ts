@@ -91,6 +91,9 @@ export interface LinkedInImageUploadResult {
   uploadUrl: string;
 }
 
+// LinkedIn lifecycle state
+export type LinkedInLifecycleState = "PUBLISHED" | "DRAFT";
+
 // LinkedIn frontmatter fields
 export interface LinkedInFrontmatter {
   title?: string;
@@ -98,6 +101,7 @@ export interface LinkedInFrontmatter {
   excerpt?: string;
   linkedin_url?: string;
   linkedin_post_id?: string;
+  linkedin_draft_id?: string;
   visibility?: LinkedInVisibility;
   tags?: string[];
   // Bilingual-specific fields
@@ -105,6 +109,8 @@ export interface LinkedInFrontmatter {
   linkedin_url_en?: string;
   linkedin_post_id_fr?: string;
   linkedin_post_id_en?: string;
+  linkedin_draft_id_fr?: string;
+  linkedin_draft_id_en?: string;
 }
 
 // LinkedIn settings

@@ -20,7 +20,7 @@
 |----------|--------|----------|
 | **Substack** | ✅ | Draft/publish, images, audience targeting, sections |
 | **WordPress** | ✅ | Multi-server, categories, tags, Rank Math SEO, Polylang |
-| **LinkedIn** | 🚧 | Coming soon |
+| **LinkedIn** | ✅ | Text/article posts, draft support, editable preview |
 
 See [PLATFORMS.md](./docs/PLATFORMS.md) for detailed setup and frontmatter documentation.
 
@@ -43,6 +43,13 @@ See [PLATFORMS.md](./docs/PLATFORMS.md) for detailed setup and frontmatter docum
 - **Wikilinks** — Automatic conversion to WordPress internal links
 - **Drop Cap Images** — Decorative initial images (see [Advanced Features](#advanced-features))
 - **Bilingual Publishing** — FR/EN with Polylang (see [Advanced Features](#advanced-features))
+
+### LinkedIn
+- **Text & Article Posts** — Share text or articles with link preview
+- **Auto Article URL** — Uses `wordpress_url` or `substack_url` from frontmatter
+- **Editable Preview** — Edit content before publishing (3000 char limit)
+- **Draft Support** — Save as draft before publishing
+- **Bilingual Support** — Publish FR or EN version separately
 
 ### General
 - **Markdown Conversion** — Full conversion to platform formats
@@ -83,6 +90,13 @@ See [PLATFORMS.md](./docs/PLATFORMS.md) for detailed setup and frontmatter docum
 2. Enable WordPress publishing
 3. Add a server with your WordPress URL and [Application Password](./docs/PLATFORMS.md#creating-an-application-password)
 4. Click **"Fetch from WP"** to load categories
+
+### LinkedIn
+
+1. Go to **Settings → Content Publisher → LinkedIn**
+2. Enable LinkedIn publishing
+3. Follow the **Setup guide** in settings to get your access token via Postman
+4. Test connection to verify
 
 ---
 
@@ -184,7 +198,6 @@ Publish French and English versions of your content simultaneously using the [Po
 See [ROADMAP.md](./docs/ROADMAP.md) for planned features.
 
 **Coming soon:**
-- LinkedIn publishing
 - Cover image support
 - Scheduled publishing
 

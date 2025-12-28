@@ -53,8 +53,8 @@ export class LinkedInMarkdownConverter {
       return display || link;
     });
 
-    // Convert blockquotes to indented text
-    text = text.replace(/^>\s*(.+)$/gm, "« $1 »");
+    // Keep blockquotes as-is (preserve > at start of line)
+    // No transformation needed
 
     // Convert unordered lists
     text = text.replace(/^[-*+]\s+(.+)$/gm, "• $1");

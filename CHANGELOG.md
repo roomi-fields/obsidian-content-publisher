@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2025-12-28
+
+### Added
+
+- **LinkedIn Publishing** — Full LinkedIn integration
+  - Text posts and shared article posts with link preview
+  - Auto-select "Shared Article" when `wordpress_url` or `substack_url` exists in frontmatter
+  - Editable preview before publishing (3000 character limit)
+  - Draft support (save as draft before publishing)
+  - Bilingual FR/EN support
+  - Step-by-step OAuth setup guide in settings with Postman instructions
+  - Test connection validates Person ID
+
+### Changed
+
+- LinkedIn post preview is now editable before publishing
+- Blockquotes (`>`) preserved as-is in LinkedIn posts
+- Settings opens external links in system default browser
+
+### Fixed
+
+- LinkedIn Person ID validation in test connection
+- Article URL auto-population from frontmatter
+
 ## [1.2.0] - 2025-11-29
 
 ### Added
@@ -175,6 +199,7 @@ Built upon open-source projects:
 
 ---
 
+[2.2.0]: https://github.com/roomi-fields/obsidian-substack/releases/tag/v2.2.0
 [1.2.0]: https://github.com/roomi-fields/obsidian-substack/releases/tag/v1.2.0
 [1.1.0]: https://github.com/roomi-fields/obsidian-substack/releases/tag/v1.1.0
 [1.0.7]: https://github.com/roomi-fields/obsidian-substack/releases/tag/v1.0.7

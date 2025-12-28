@@ -773,13 +773,119 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
           }),
       );
 
+    // Setup instructions - always visible so users know how to get credentials
+    new Setting(containerEl)
+      .setName("Step 1: Create LinkedIn app")
+      .setDesc("Create an app (requires a Company Page - create an empty one if needed)")
+      .addButton((btn) => btn
+        .setButtonText("Open LinkedIn Developer Portal")
+        .onClick(() => {
+          // Use child_process to open in true system default browser
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { exec } = require("child_process");
+          if (Platform.isWin) {
+            exec('start "" "https://www.linkedin.com/developers/apps"');
+          } else if (Platform.isMacOS) {
+            exec('open "https://www.linkedin.com/developers/apps"');
+          } else {
+            exec('xdg-open "https://www.linkedin.com/developers/apps"');
+          }
+        }));
+
+    new Setting(containerEl)
+      .setName("Step 2: Request API access")
+      .setDesc("In 'Products' tab, request 'Share on LinkedIn' and 'Sign In with LinkedIn using OpenID Connect'");
+
+    new Setting(containerEl)
+      .setName("Step 3: Add redirect URL")
+      .setDesc("In 'Auth' tab, add this redirect URL (select and copy):")
+      .addText((text) => {
+        text.setValue("https://oauth.pstmn.io/v1/callback");
+        text.inputEl.readOnly = true;
+        text.inputEl.addClass("substack-input-full-width");
+        text.inputEl.style.cursor = "text";
+      });
+
+    new Setting(containerEl)
+      .setName("Step 4: Note credentials")
+      .setDesc("Copy your Client ID and Client Secret from the 'Auth' tab");
+
+    new Setting(containerEl)
+      .setName("Step 5: Get access token with Postman")
+      .setDesc("In Postman: New → HTTP, then go to 'Auth' tab, select Type 'OAuth 2.0', fill in the fields below:")
+      .addButton((btn) => btn
+        .setButtonText("Download Postman")
+        .onClick(() => {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { exec } = require("child_process");
+          if (Platform.isWin) {
+            exec('start "" "https://www.postman.com/downloads/"');
+          } else if (Platform.isMacOS) {
+            exec('open "https://www.postman.com/downloads/"');
+          } else {
+            exec('xdg-open "https://www.postman.com/downloads/"');
+          }
+        }));
+
+    new Setting(containerEl)
+      .setName("Auth URL (copy to Postman)")
+      .addText((text) => {
+        text.setValue("https://www.linkedin.com/oauth/v2/authorization");
+        text.inputEl.readOnly = true;
+        text.inputEl.addClass("substack-input-full-width");
+      });
+
+    new Setting(containerEl)
+      .setName("Access Token URL (copy to Postman)")
+      .addText((text) => {
+        text.setValue("https://www.linkedin.com/oauth/v2/accessToken");
+        text.inputEl.readOnly = true;
+        text.inputEl.addClass("substack-input-full-width");
+      });
+
+    new Setting(containerEl)
+      .setName("Callback URL (copy to Postman)")
+      .addText((text) => {
+        text.setValue("https://oauth.pstmn.io/v1/callback");
+        text.inputEl.readOnly = true;
+        text.inputEl.addClass("substack-input-full-width");
+      });
+
+    new Setting(containerEl)
+      .setName("Scope (copy to Postman)")
+      .addText((text) => {
+        text.setValue("openid profile w_member_social");
+        text.inputEl.readOnly = true;
+        text.inputEl.addClass("substack-input-full-width");
+      });
+
+    new Setting(containerEl)
+      .setName("Client Authentication (important!)")
+      .setDesc("In Postman OAuth 2.0 config, set 'Client Authentication' to 'Send client credentials in body' (not header)");
+
+    new Setting(containerEl)
+      .setName("Step 6: Complete OAuth")
+      .setDesc("Enter Client ID & Secret, click 'Get New Access Token', login to LinkedIn, authorize. Then click 'Use Token' and copy the Access Token value.");
+
+    new Setting(containerEl)
+      .setName("Step 7: Get Person ID (different from Client ID!)")
+      .setDesc("New → HTTP GET request. In 'Auth' tab: Type 'Bearer Token', paste your access token. Send request, copy the 'sub' value (NOT Client ID).")
+      .addText((text) => {
+        text.setValue("https://api.linkedin.com/v2/userinfo");
+        text.inputEl.readOnly = true;
+        text.inputEl.addClass("substack-input-full-width");
+      });
+
     if (this.plugin.settings.linkedinEnabled) {
+      // Access token field
+      const tokenDesc = document.createDocumentFragment();
+      tokenDesc.appendText("Your OAuth2 access token (starts with 'AQ...')");
       new Setting(containerEl)
         .setName("Access token")
-        .setDesc("LinkedIn API access token (OAuth2). Get one from LinkedIn Developer Portal.")
+        .setDesc(tokenDesc)
         .addText((text) => {
           text
-            .setPlaceholder("Enter access token")
+            .setPlaceholder("AQV...")
             .setValue(this.plugin.settings.linkedinAccessToken)
             .onChange(async (value) => {
               this.plugin.settings.linkedinAccessToken = value;
@@ -789,12 +895,15 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
           text.inputEl.addClass("substack-input-full-width");
         });
 
+      // Person ID field
+      const personIdDesc = document.createDocumentFragment();
+      personIdDesc.appendText("Your LinkedIn member ID (from /v2/userinfo 'sub' field, e.g., 'abc123XYZ')");
       new Setting(containerEl)
         .setName("Person ID")
-        .setDesc("Your LinkedIn person ID (found in your profile URL or via API)")
+        .setDesc(personIdDesc)
         .addText((text) => {
           text
-            .setPlaceholder("Enter person ID")
+            .setPlaceholder("abc123XYZ")
             .setValue(this.plugin.settings.linkedinPersonId)
             .onChange(async (value) => {
               this.plugin.settings.linkedinPersonId = value;
@@ -835,7 +944,12 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
               );
               const result = await api.testConnection();
               if (result.success && result.data) {
-                new Notice(`Connected as: ${result.data.localizedFirstName} ${result.data.localizedLastName}`);
+                // Check if Person ID matches the returned sub
+                if (result.data.id !== this.plugin.settings.linkedinPersonId) {
+                  new Notice(`Warning: Person ID mismatch! Expected: ${result.data.id}`, 10000);
+                } else {
+                  new Notice(`Connected as: ${result.data.localizedFirstName} ${result.data.localizedLastName}`);
+                }
               } else {
                 new Notice(`Connection failed: ${result.error}`);
               }

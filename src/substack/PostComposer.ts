@@ -16,6 +16,7 @@ import {
   getLanguageContent
 } from "../wordpress/bilingualParser";
 import { BilingualContent, PolylangLanguage } from "../wordpress/types";
+import { WikiLinkConverter } from "../wordpress/wikiLinkConverter";
 
 export interface PostComposerDefaults {
   defaultPublication: string;
@@ -53,6 +54,7 @@ export class SubstackPostComposer extends Modal {
   private selectedLanguage: PolylangLanguage = "en"; // Default to EN for Substack
   private rawContent: string = "";
   private addWordPressHeader: boolean = false;
+  private wikiLinkConverter: WikiLinkConverter;
 
   constructor(
     app: App,
@@ -67,6 +69,7 @@ export class SubstackPostComposer extends Modal {
     this.logger = logger;
     this.converter = new MarkdownConverter();
     this.imageHandler = new ImageHandler(api, app.vault, logger);
+    this.wikiLinkConverter = new WikiLinkConverter(app, logger);
     this.defaults = defaults || {
       defaultPublication: publications[0] || "",
       defaultSectionId: null,
@@ -662,6 +665,17 @@ export class SubstackPostComposer extends Modal {
     }
 
     let processedContent = imageResult.processedMarkdown;
+
+    // Convert wikilinks to WordPress URLs (markdown format for Substack converter)
+    const wikiLinkResult = this.wikiLinkConverter.processWikiLinks(processedContent, "markdown");
+    processedContent = wikiLinkResult.processed;
+
+    if (wikiLinkResult.resolved.length > 0) {
+      this.logger.info(`Converted ${wikiLinkResult.resolved.length} wikilink(s) to WordPress URLs`);
+    }
+    if (wikiLinkResult.unresolved.length > 0) {
+      this.logger.debug(`Unresolved wikilinks: ${wikiLinkResult.unresolved.join(", ")}`);
+    }
 
     // Add WordPress header links for bilingual content
     if (this.isBilingual && this.addWordPressHeader) {

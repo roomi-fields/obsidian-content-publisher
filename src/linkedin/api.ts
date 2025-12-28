@@ -6,6 +6,7 @@
 import { requestUrl, RequestUrlResponse } from "obsidian";
 import {
   LinkedInApiResult,
+  LinkedInLifecycleState,
   LinkedInPostResponse,
   LinkedInProfile,
   LinkedInSharePayload,
@@ -115,14 +116,18 @@ export class LinkedInAPI {
 
   /**
    * Create a text post on LinkedIn
+   * @param text - The post content
+   * @param visibility - Post visibility (PUBLIC, CONNECTIONS, LOGGED_IN)
+   * @param lifecycleState - PUBLISHED for immediate post, DRAFT to save as draft
    */
   async createTextPost(
     text: string,
-    visibility: LinkedInVisibility = "PUBLIC"
+    visibility: LinkedInVisibility = "PUBLIC",
+    lifecycleState: LinkedInLifecycleState = "PUBLISHED"
   ): Promise<LinkedInApiResult<LinkedInPostResponse>> {
     const payload: LinkedInSharePayload = {
       author: this.getPersonUrn(),
-      lifecycleState: "PUBLISHED",
+      lifecycleState,
       specificContent: {
         "com.linkedin.ugc.ShareContent": {
           shareCommentary: {
@@ -166,17 +171,24 @@ export class LinkedInAPI {
 
   /**
    * Create a post with an article link
+   * @param text - The post content
+   * @param articleUrl - URL of the article to share
+   * @param articleTitle - Title of the article
+   * @param articleDescription - Optional description
+   * @param visibility - Post visibility
+   * @param lifecycleState - PUBLISHED for immediate post, DRAFT to save as draft
    */
   async createArticlePost(
     text: string,
     articleUrl: string,
     articleTitle: string,
     articleDescription?: string,
-    visibility: LinkedInVisibility = "PUBLIC"
+    visibility: LinkedInVisibility = "PUBLIC",
+    lifecycleState: LinkedInLifecycleState = "PUBLISHED"
   ): Promise<LinkedInApiResult<LinkedInPostResponse>> {
     const payload: LinkedInSharePayload = {
       author: this.getPersonUrn(),
-      lifecycleState: "PUBLISHED",
+      lifecycleState,
       specificContent: {
         "com.linkedin.ugc.ShareContent": {
           shareCommentary: {
@@ -232,16 +244,22 @@ export class LinkedInAPI {
 
   /**
    * Create a post with an uploaded image
+   * @param text - The post content
+   * @param imageAsset - LinkedIn image asset URN
+   * @param imageTitle - Optional image title
+   * @param visibility - Post visibility
+   * @param lifecycleState - PUBLISHED for immediate post, DRAFT to save as draft
    */
   async createImagePost(
     text: string,
     imageAsset: string,
     imageTitle?: string,
-    visibility: LinkedInVisibility = "PUBLIC"
+    visibility: LinkedInVisibility = "PUBLIC",
+    lifecycleState: LinkedInLifecycleState = "PUBLISHED"
   ): Promise<LinkedInApiResult<LinkedInPostResponse>> {
     const payload: LinkedInSharePayload = {
       author: this.getPersonUrn(),
-      lifecycleState: "PUBLISHED",
+      lifecycleState,
       specificContent: {
         "com.linkedin.ugc.ShareContent": {
           shareCommentary: {
@@ -373,12 +391,71 @@ export class LinkedInAPI {
   }
 
   /**
+   * Publish an existing draft post
+   * @param draftId - The URN of the draft post to publish
+   */
+  async publishDraft(
+    draftId: string
+  ): Promise<LinkedInApiResult<LinkedInPostResponse>> {
+    try {
+      // LinkedIn API uses a partial update to change lifecycle state
+      const response = await requestUrl({
+        url: `https://api.linkedin.com/v2/ugcPosts/${encodeURIComponent(draftId)}`,
+        method: "POST",
+        headers: {
+          ...this.getHeaders(),
+          "X-Restli-Method": "PARTIAL_UPDATE"
+        },
+        body: JSON.stringify({
+          patch: {
+            $set: {
+              lifecycleState: "PUBLISHED"
+            }
+          }
+        }),
+        throw: false
+      });
+
+      if (response.status >= 200 && response.status < 300) {
+        return {
+          success: true,
+          data: {
+            id: draftId,
+            owner: this.getPersonUrn(),
+            created: { time: Date.now() },
+            lifecycleState: "PUBLISHED"
+          }
+        };
+      }
+
+      return {
+        success: false,
+        error: this.extractError(response)
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }
+
+  /**
    * Get post URL from post ID
    */
   getPostUrl(postId: string): string {
-    // Extract the activity ID from the URN (e.g., urn:li:ugcPost:123456789 -> 123456789)
-    const activityId = postId.split(":").pop() || postId;
-    return `https://www.linkedin.com/feed/update/urn:li:ugcPost:${activityId}`;
+    // Extract the ID from the URN (e.g., urn:li:ugcPost:123456789 -> 123456789)
+    // Note: LinkedIn uses urn:li:activity for public URLs, but we only get ugcPost ID
+    // The share format works as a redirect in most cases
+    const postIdNum = postId.split(":").pop() || postId;
+    return `https://www.linkedin.com/feed/update/urn:li:share:${postIdNum}`;
+  }
+
+  /**
+   * Get draft URL - LinkedIn drafts are accessible at a specific URL
+   */
+  getDraftUrl(): string {
+    return "https://www.linkedin.com/post/new/drafts";
   }
 
   /**

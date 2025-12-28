@@ -4,7 +4,7 @@ import { LinkedInAPI } from "./api";
 import { LinkedInMarkdownConverter } from "./converter";
 import { LinkedInImageHandler } from "./imageHandler";
 import { ILogger } from "../utils/logger";
-import { LinkedInFrontmatter, LinkedInVisibility } from "./types";
+import { LinkedInFrontmatter, LinkedInLifecycleState, LinkedInVisibility } from "./types";
 import {
   isBilingualContent,
   parseBilingualContent,
@@ -30,6 +30,8 @@ export class LinkedInPostComposer extends Modal {
   private tags: string[] = [];
   private articleUrl: string = "";
   private postType: "text" | "article" | "image" = "text";
+  private saveAsDraft: boolean = false;
+  private existingDraftId: string | null = null;
 
   // UI elements
   private publishButton: HTMLButtonElement | null = null;
@@ -140,6 +142,7 @@ export class LinkedInPostComposer extends Modal {
     typeSelect.addEventListener("change", () => {
       this.postType = typeSelect.value as typeof this.postType;
       this.updateArticleUrlVisibility();
+      this.updatePreview();
     });
 
     // Article URL input (only shown for article type)
@@ -170,9 +173,16 @@ export class LinkedInPostComposer extends Modal {
 
     articleUrlInput.addEventListener("input", () => {
       this.articleUrl = articleUrlInput.value;
+      this.updatePreview();
     });
 
-    // Initially hide if not article type
+    // Auto-select "Shared Article" if we have an article URL
+    if (this.articleUrl) {
+      this.postType = "article";
+      typeSelect.value = "article";
+    }
+
+    // Show/hide article URL field based on post type
     this.updateArticleUrlVisibility();
 
     // Visibility selector
@@ -201,6 +211,57 @@ export class LinkedInPostComposer extends Modal {
 
     visibilitySelect.addEventListener("change", () => {
       this.visibility = visibilitySelect.value as LinkedInVisibility;
+    });
+
+    // Check for existing draft
+    this.initializeExistingDraft();
+
+    // Draft mode section
+    const draftContainer = contentEl.createDiv({
+      cls: "linkedin-field-container linkedin-draft-section"
+    });
+
+    // Show existing draft notice if applicable
+    if (this.existingDraftId) {
+      const draftNotice = draftContainer.createDiv({
+        cls: "linkedin-draft-notice"
+      });
+      draftNotice.createEl("span", {
+        text: "📝 Draft found — ",
+        cls: "linkedin-draft-notice-text"
+      });
+      const publishDraftBtn = draftNotice.createEl("button", {
+        text: "Publish it",
+        cls: "linkedin-publish-draft-button"
+      });
+      publishDraftBtn.addEventListener("click", () => {
+        void this.publishExistingDraft();
+      });
+      draftNotice.createEl("span", {
+        text: " — or create new below",
+        cls: "linkedin-draft-notice-text"
+      });
+    }
+
+    // Save as draft checkbox
+    const draftCheckboxContainer = draftContainer.createDiv({
+      cls: "linkedin-checkbox-container"
+    });
+    const draftCheckbox = draftCheckboxContainer.createEl("input", {
+      type: "checkbox",
+      cls: "linkedin-checkbox"
+    });
+    draftCheckbox.id = "linkedin-save-as-draft";
+    draftCheckbox.checked = this.saveAsDraft;
+    const draftLabel = draftCheckboxContainer.createEl("label", {
+      text: "Save as draft (don't publish yet)",
+      cls: "linkedin-checkbox-label"
+    });
+    draftLabel.setAttribute("for", "linkedin-save-as-draft");
+
+    draftCheckbox.addEventListener("change", () => {
+      this.saveAsDraft = draftCheckbox.checked;
+      this.updatePublishButtonText();
     });
 
     // Tags input
@@ -233,10 +294,18 @@ export class LinkedInPostComposer extends Modal {
     const previewContainer = contentEl.createDiv({
       cls: "linkedin-field-container"
     });
-    previewContainer.createEl("label", { text: "Post content preview" });
+    previewContainer.createEl("label", { text: "Post content (editable)" });
     this.previewEl = previewContainer.createEl("textarea", {
       cls: "linkedin-preview",
-      attr: { rows: "10", readonly: "true" }
+      attr: { rows: "10" }
+    });
+
+    // Update content when user edits preview
+    this.previewEl.addEventListener("input", () => {
+      if (this.previewEl) {
+        this.content = this.previewEl.value;
+        this.updateCharacterCounter();
+      }
     });
 
     // Character counter
@@ -330,6 +399,15 @@ export class LinkedInPostComposer extends Modal {
       if (typeof fm.linkedin_url_en === "string") {
         parsed.linkedin_url_en = fm.linkedin_url_en;
       }
+      if (typeof fm.linkedin_draft_id === "string") {
+        parsed.linkedin_draft_id = fm.linkedin_draft_id;
+      }
+      if (typeof fm.linkedin_draft_id_fr === "string") {
+        parsed.linkedin_draft_id_fr = fm.linkedin_draft_id_fr;
+      }
+      if (typeof fm.linkedin_draft_id_en === "string") {
+        parsed.linkedin_draft_id_en = fm.linkedin_draft_id_en;
+      }
 
       this.frontmatter = parsed;
     }
@@ -356,6 +434,124 @@ export class LinkedInPostComposer extends Modal {
       this.tags = this.frontmatter.tags.map((t) =>
         t.startsWith("#") ? t : `#${t}`
       );
+    }
+  }
+
+  /**
+   * Initialize existing draft ID from frontmatter
+   */
+  private initializeExistingDraft(): void {
+    if (this.isBilingual) {
+      const draftKey =
+        this.selectedLanguage === "fr"
+          ? "linkedin_draft_id_fr"
+          : "linkedin_draft_id_en";
+      this.existingDraftId = this.frontmatter[draftKey] || null;
+    } else {
+      this.existingDraftId = this.frontmatter.linkedin_draft_id || null;
+    }
+
+    if (this.existingDraftId) {
+      this.logger.debug("Found existing LinkedIn draft", {
+        draftId: this.existingDraftId,
+        language: this.isBilingual ? this.selectedLanguage : "n/a"
+      });
+    }
+  }
+
+  /**
+   * Update the publish button text based on saveAsDraft state
+   */
+  private updatePublishButtonText(): void {
+    if (this.publishButton) {
+      this.publishButton.textContent = this.saveAsDraft
+        ? "Save as Draft"
+        : "Publish";
+    }
+  }
+
+  /**
+   * Publish an existing draft
+   */
+  private async publishExistingDraft(): Promise<void> {
+    if (!this.existingDraftId) {
+      new Notice("No existing draft found");
+      return;
+    }
+
+    this.setButtonDisabled(true, "Publishing draft...");
+
+    try {
+      const result = await this.api.publishDraft(this.existingDraftId);
+
+      if (result.success && result.data) {
+        const postId = result.data.id;
+        const postUrl = this.api.getPostUrl(postId);
+
+        // Update frontmatter: move from draft to published
+        await this.updateFrontmatterAfterDraftPublish(postId, postUrl);
+
+        this.logger.info("Published draft to LinkedIn successfully", {
+          postId,
+          postUrl
+        });
+
+        new Notice("Draft published to LinkedIn successfully!");
+        this.close();
+      } else {
+        throw new Error(result.error || "Failed to publish draft");
+      }
+    } catch (error) {
+      this.logger.error("Failed to publish draft to LinkedIn", error);
+      const msg = error instanceof Error ? error.message : String(error);
+      new Notice(`Failed to publish draft: ${msg}`);
+      this.setButtonDisabled(false);
+    }
+  }
+
+  /**
+   * Update frontmatter after publishing a draft
+   */
+  private async updateFrontmatterAfterDraftPublish(
+    postId: string,
+    postUrl: string
+  ): Promise<void> {
+    if (!this.activeFile) return;
+
+    try {
+      await this.app.fileManager.processFrontMatter(
+        this.activeFile,
+        (frontmatter) => {
+          if (this.isBilingual) {
+            const urlKey =
+              this.selectedLanguage === "fr"
+                ? "linkedin_url_fr"
+                : "linkedin_url_en";
+            const idKey =
+              this.selectedLanguage === "fr"
+                ? "linkedin_post_id_fr"
+                : "linkedin_post_id_en";
+            const draftKey =
+              this.selectedLanguage === "fr"
+                ? "linkedin_draft_id_fr"
+                : "linkedin_draft_id_en";
+
+            frontmatter[urlKey] = postUrl;
+            frontmatter[idKey] = postId;
+            delete frontmatter[draftKey];
+          } else {
+            frontmatter.linkedin_url = postUrl;
+            frontmatter.linkedin_post_id = postId;
+            delete frontmatter.linkedin_draft_id;
+          }
+        }
+      );
+      this.logger.info("Updated frontmatter after draft publish", {
+        postUrl,
+        language: this.isBilingual ? this.selectedLanguage : "n/a"
+      });
+    } catch (error) {
+      this.logger.error("Failed to update frontmatter after draft publish", error);
     }
   }
 
@@ -444,6 +640,21 @@ export class LinkedInPostComposer extends Modal {
   }
 
   /**
+   * Update the character counter display
+   */
+  private updateCharacterCounter(): void {
+    const counterEl = this.contentEl.querySelector(
+      ".linkedin-counter"
+    ) as HTMLElement;
+    if (counterEl && this.previewEl) {
+      const length = this.previewEl.value.length;
+      const color = length > 3000 ? "red" : length > 2700 ? "orange" : "";
+      counterEl.textContent = `${length} / 3000 characters`;
+      counterEl.style.color = color;
+    }
+  }
+
+  /**
    * Update the preview textarea with formatted content
    */
   private async updatePreview(): Promise<void> {
@@ -452,17 +663,8 @@ export class LinkedInPostComposer extends Modal {
     try {
       const content = await this.getFormattedContent();
       this.previewEl.value = content;
-
-      // Update character counter
-      const counterEl = this.contentEl.querySelector(
-        ".linkedin-counter"
-      ) as HTMLElement;
-      if (counterEl) {
-        const length = content.length;
-        const color = length > 3000 ? "red" : length > 2700 ? "orange" : "";
-        counterEl.textContent = `${length} / 3000 characters`;
-        counterEl.style.color = color;
-      }
+      this.content = content;
+      this.updateCharacterCounter();
     } catch (error) {
       this.logger.error("Failed to update preview", error);
     }
@@ -513,7 +715,8 @@ export class LinkedInPostComposer extends Modal {
    * Publish to LinkedIn
    */
   private async publish(): Promise<void> {
-    const content = await this.getFormattedContent();
+    // Use the edited preview content (this.content is updated by input listener)
+    const content = this.previewEl?.value || this.content;
 
     if (!content.trim()) {
       new Notice("Post content is empty");
@@ -525,17 +728,23 @@ export class LinkedInPostComposer extends Modal {
       return;
     }
 
-    this.setButtonDisabled(true, "Publishing...");
+    const lifecycleState: LinkedInLifecycleState = this.saveAsDraft
+      ? "DRAFT"
+      : "PUBLISHED";
+    const actionText = this.saveAsDraft ? "Saving draft..." : "Publishing...";
+
+    this.setButtonDisabled(true, actionText);
 
     try {
       let result;
 
       if (this.postType === "article" && this.articleUrl) {
         // Share article with link
-        this.logger.debug("Publishing article post to LinkedIn", {
+        this.logger.debug("Creating article post on LinkedIn", {
           title: this.title,
           articleUrl: this.articleUrl,
-          visibility: this.visibility
+          visibility: this.visibility,
+          lifecycleState
         });
 
         result = await this.api.createArticlePost(
@@ -543,7 +752,8 @@ export class LinkedInPostComposer extends Modal {
           this.articleUrl,
           this.title,
           this.frontmatter.excerpt,
-          this.visibility
+          this.visibility,
+          lifecycleState
         );
       } else if (this.postType === "image") {
         // Image post - upload first image
@@ -554,55 +764,110 @@ export class LinkedInPostComposer extends Modal {
         );
 
         if (imageResult.featuredImage) {
-          this.logger.debug("Publishing image post to LinkedIn", {
+          this.logger.debug("Creating image post on LinkedIn", {
             title: this.title,
             imageAsset: imageResult.featuredImage.asset,
-            visibility: this.visibility
+            visibility: this.visibility,
+            lifecycleState
           });
 
           result = await this.api.createImagePost(
             content,
             imageResult.featuredImage.asset,
             this.title,
-            this.visibility
+            this.visibility,
+            lifecycleState
           );
         } else {
           // Fallback to text post if no image found
           this.logger.warn("No image found, falling back to text post");
-          result = await this.api.createTextPost(content, this.visibility);
+          result = await this.api.createTextPost(
+            content,
+            this.visibility,
+            lifecycleState
+          );
         }
       } else {
         // Text post
-        this.logger.debug("Publishing text post to LinkedIn", {
+        this.logger.debug("Creating text post on LinkedIn", {
           visibility: this.visibility,
-          contentLength: content.length
+          contentLength: content.length,
+          lifecycleState
         });
 
-        result = await this.api.createTextPost(content, this.visibility);
+        result = await this.api.createTextPost(
+          content,
+          this.visibility,
+          lifecycleState
+        );
       }
 
       if (result.success && result.data) {
         const postId = result.data.id;
-        const postUrl = this.api.getPostUrl(postId);
 
-        // Update frontmatter with LinkedIn URL
-        await this.updateFrontmatterWithUrl(postId, postUrl);
+        if (this.saveAsDraft) {
+          // Save as draft - store draft ID in frontmatter
+          await this.updateFrontmatterWithDraftId(postId);
 
-        this.logger.info("Published to LinkedIn successfully", {
-          postId,
-          postUrl
-        });
+          this.logger.info("Saved draft to LinkedIn successfully", { postId });
 
-        new Notice("Published to LinkedIn successfully!");
+          const draftUrl = this.api.getDraftUrl();
+          new Notice(
+            `Draft saved to LinkedIn! View drafts at: ${draftUrl}`,
+            8000
+          );
+        } else {
+          // Published - store URL in frontmatter
+          const postUrl = this.api.getPostUrl(postId);
+          await this.updateFrontmatterWithUrl(postId, postUrl);
+
+          this.logger.info("Published to LinkedIn successfully", {
+            postId,
+            postUrl
+          });
+
+          new Notice("Published to LinkedIn successfully!");
+        }
+
         this.close();
       } else {
-        throw new Error(result.error || "Failed to publish");
+        throw new Error(result.error || "Failed to create post");
       }
     } catch (error) {
-      this.logger.error("Failed to publish to LinkedIn", error);
+      this.logger.error("Failed to create LinkedIn post", error);
       const msg = error instanceof Error ? error.message : String(error);
-      new Notice(`Failed to publish: ${msg}`);
+      new Notice(`Failed: ${msg}`);
       this.setButtonDisabled(false);
+    }
+  }
+
+  /**
+   * Update frontmatter with draft ID
+   */
+  private async updateFrontmatterWithDraftId(draftId: string): Promise<void> {
+    if (!this.activeFile) return;
+
+    try {
+      await this.app.fileManager.processFrontMatter(
+        this.activeFile,
+        (frontmatter) => {
+          if (this.isBilingual) {
+            const draftKey =
+              this.selectedLanguage === "fr"
+                ? "linkedin_draft_id_fr"
+                : "linkedin_draft_id_en";
+            frontmatter[draftKey] = draftId;
+          } else {
+            frontmatter.linkedin_draft_id = draftId;
+          }
+        }
+      );
+      this.logger.info("Updated frontmatter with LinkedIn draft ID", {
+        draftId,
+        language: this.isBilingual ? this.selectedLanguage : "n/a"
+      });
+    } catch (error) {
+      this.logger.error("Failed to update frontmatter with draft ID", error);
     }
   }
 

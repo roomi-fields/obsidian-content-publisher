@@ -149,6 +149,51 @@ substack_draft_id: 123456789
 
 ---
 
-## Planned Platforms
+## LinkedIn
 
-- LinkedIn (coming soon)
+### Setup
+
+1. Go to Settings → Content Publisher → LinkedIn
+2. Enable LinkedIn publishing
+3. Follow the **Setup guide** displayed in settings:
+   - Create a LinkedIn app in the Developer Portal (requires a Company Page)
+   - Request "Share on LinkedIn" and "Sign In with LinkedIn" products
+   - Use Postman to complete OAuth2 flow and get your access token
+   - Get your Person ID from the `/v2/userinfo` endpoint
+4. Click "Test connection" to verify
+
+### Frontmatter Fields
+
+```yaml
+---
+title: "My Article Title"
+excerpt: "Article description for the post"
+wordpress_url: https://example.com/my-article/  # Auto-used for Shared Article
+substack_url: https://you.substack.com/p/article  # Fallback if no wordpress_url
+---
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `title` | string | Used in article link preview |
+| `excerpt` | string | Description for article link |
+| `wordpress_url` | string | URL for Shared Article (priority) |
+| `substack_url` | string | Fallback URL if no wordpress_url |
+
+### Post Types
+
+| Type | Description |
+|------|-------------|
+| **Text Post** | Plain text only (no link preview) |
+| **Shared Article** | Text + article link with preview card |
+
+When `wordpress_url` or `substack_url` exists in frontmatter, "Shared Article" is auto-selected.
+
+### Features
+
+- Text posts and shared article posts with link preview
+- Auto-select article type when URL in frontmatter
+- Editable preview before publishing (3000 character limit)
+- Draft support (save as draft)
+- Bilingual FR/EN support
+- Character counter with warnings

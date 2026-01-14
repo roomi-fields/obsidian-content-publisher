@@ -21,6 +21,10 @@ export class LinkedInMarkdownConverter {
     // Remove frontmatter if present
     text = this.removeFrontmatter(text);
 
+    // Remove dataviewjs and dataview code blocks entirely
+    text = text.replace(/```dataviewjs[\s\S]*?```/g, "");
+    text = text.replace(/```dataview[\s\S]*?```/g, "");
+
     // Remove images (already handled separately)
     text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, "");
     text = text.replace(/!\[\[([^\]]+)\]\]/g, "");
@@ -44,6 +48,9 @@ export class LinkedInMarkdownConverter {
       const content = match.replace(/```\w*\n?/, "").replace(/\n?```$/, "");
       return `\n${  content  }\n`;
     });
+
+    // Convert markdown tables to readable format
+    text = this.convertTables(text);
 
     // Convert links to text with URL
     text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)");
@@ -80,6 +87,50 @@ export class LinkedInMarkdownConverter {
   private removeFrontmatter(markdown: string): string {
     const frontmatterRegex = /^---\n[\s\S]*?\n---\n/;
     return markdown.replace(frontmatterRegex, "");
+  }
+
+  /**
+   * Convert markdown tables to readable text format
+   */
+  private convertTables(text: string): string {
+    // Match markdown tables (header row, separator row, data rows)
+    const tableRegex = /\|(.+)\|\n\|[-:\s|]+\|\n((?:\|.+\|\n?)+)/g;
+
+    return text.replace(tableRegex, (match) => {
+      const lines = match.trim().split("\n");
+      if (lines.length < 3) return match;
+
+      // Parse header row
+      const headerLine = lines[0] ?? "";
+      const headers = headerLine
+        .split("|")
+        .map((h) => h.trim())
+        .filter((h) => h);
+
+      // Skip separator row (index 1), parse data rows
+      const rows: string[][] = [];
+      for (let i = 2; i < lines.length; i++) {
+        const rowLine = lines[i] ?? "";
+        const cells = rowLine
+          .split("|")
+          .map((c) => c.trim())
+          .filter((c) => c);
+        if (cells.length > 0) {
+          rows.push(cells);
+        }
+      }
+
+      // Format as readable text: each row becomes "Header1: value1 | Header2: value2"
+      let result = "\n";
+      for (const row of rows) {
+        const parts: string[] = [];
+        for (let i = 0; i < headers.length && i < row.length; i++) {
+          parts.push(`${headers[i]}: ${row[i]}`);
+        }
+        result += `• ${parts.join(" — ")}\n`;
+      }
+      return `${result}\n`;
+    });
   }
 
   /**

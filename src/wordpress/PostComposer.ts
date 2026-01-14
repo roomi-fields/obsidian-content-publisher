@@ -705,7 +705,7 @@ ${processedBodyHtml}
     // Images (already processed to WordPress URLs)
     html = html.replace(
       /!\[([^\]]*)\]\(([^)]+)\)/g,
-      '<img src="$2" alt="$1" />'
+      '<img src="$2" alt="$1">'
     );
 
     // Links (including converted wikilinks which are now <a> tags)
@@ -727,15 +727,16 @@ ${processedBodyHtml}
     html = html.replace(/^\d+\.\s+(.+)$/gm, "<li>$1</li>");
 
     // Horizontal rules
-    html = html.replace(/^---+$/gm, "<hr />");
-    html = html.replace(/^\*\*\*+$/gm, "<hr />");
-    html = html.replace(/^___+$/gm, "<hr />");
+    html = html.replace(/^---+$/gm, "<hr>");
+    html = html.replace(/^\*\*\*+$/gm, "<hr>");
+    html = html.replace(/^___+$/gm, "<hr>");
 
     // Paragraphs - wrap text blocks in <p> tags
     const lines = html.split("\n");
     const result: string[] = [];
     let inParagraph = false;
     let paragraphContent: string[] = [];
+    let consecutiveEmptyLines = 0;
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -756,17 +757,29 @@ ${processedBodyHtml}
         trimmed.startsWith("<img") ||
         trimmed === "";
 
-      if (isBlockElement) {
-        // Close any open paragraph
+      if (trimmed === "") {
+        consecutiveEmptyLines++;
+        // Close any open paragraph on first empty line
         if (inParagraph && paragraphContent.length > 0) {
-          result.push(`<p>${paragraphContent.join("<br />")}</p>`);
+          result.push(`<p>${paragraphContent.join("<br>")}</p>`);
           paragraphContent = [];
           inParagraph = false;
         }
-        if (trimmed !== "") {
-          result.push(line);
+        // Add extra line break for double+ empty lines
+        if (consecutiveEmptyLines >= 2) {
+          result.push("<p>&nbsp;</p>");
         }
+      } else if (isBlockElement) {
+        consecutiveEmptyLines = 0;
+        // Close any open paragraph
+        if (inParagraph && paragraphContent.length > 0) {
+          result.push(`<p>${paragraphContent.join("<br>")}</p>`);
+          paragraphContent = [];
+          inParagraph = false;
+        }
+        result.push(line);
       } else {
+        consecutiveEmptyLines = 0;
         // Regular text line
         inParagraph = true;
         paragraphContent.push(trimmed);
@@ -775,10 +788,14 @@ ${processedBodyHtml}
 
     // Close final paragraph if needed
     if (inParagraph && paragraphContent.length > 0) {
-      result.push(`<p>${paragraphContent.join("<br />")}</p>`);
+      result.push(`<p>${paragraphContent.join("<br>")}</p>`);
     }
 
-    return result.join("\n");
+    // Remove leading empty paragraphs (ensure H1 comes first)
+    let finalHtml = result.join("\n");
+    finalHtml = finalHtml.replace(/^(\s*<p>&nbsp;<\/p>\s*)+/, "");
+
+    return finalHtml;
   }
 
   /**

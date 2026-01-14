@@ -691,6 +691,13 @@ ${finalBodyHtml}
   private markdownToHtml(markdown: string): string {
     let html = markdown;
 
+    // Remove dataviewjs and dataview code blocks entirely
+    html = html.replace(/```dataviewjs[\s\S]*?```/g, "");
+    html = html.replace(/```dataview[\s\S]*?```/g, "");
+
+    // Convert markdown tables to HTML tables
+    html = this.convertTablesToHtml(html);
+
     // Headers
     html = html.replace(/^######\s+(.+)$/gm, "<h6>$1</h6>");
     html = html.replace(/^#####\s+(.+)$/gm, "<h5>$1</h5>");
@@ -791,6 +798,58 @@ ${finalBodyHtml}
     }
 
     return result.join("\n");
+  }
+
+  /**
+   * Convert markdown tables to HTML tables
+   */
+  private convertTablesToHtml(text: string): string {
+    // Match markdown tables (header row, separator row, data rows)
+    const tableRegex = /\|(.+)\|\n\|[-:\s|]+\|\n((?:\|.+\|\n?)+)/g;
+
+    return text.replace(tableRegex, (match) => {
+      const lines = match.trim().split("\n");
+      if (lines.length < 3) return match;
+
+      // Parse header row
+      const headerLine = lines[0] ?? "";
+      const headers = headerLine
+        .split("|")
+        .map((h) => h.trim())
+        .filter((h) => h);
+
+      // Skip separator row (index 1), parse data rows
+      const rows: string[][] = [];
+      for (let i = 2; i < lines.length; i++) {
+        const rowLine = lines[i] ?? "";
+        const cells = rowLine
+          .split("|")
+          .map((c) => c.trim())
+          .filter((c) => c);
+        if (cells.length > 0) {
+          rows.push(cells);
+        }
+      }
+
+      // Build HTML table
+      let html = '<table style="border-collapse: collapse; width: 100%;">\n<thead>\n<tr>\n';
+      for (const header of headers) {
+        html += `<th style="border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f2f2f2;">${header}</th>\n`;
+      }
+      html += "</tr>\n</thead>\n<tbody>\n";
+
+      for (const row of rows) {
+        html += "<tr>\n";
+        for (let i = 0; i < headers.length; i++) {
+          const cell = row[i] ?? "";
+          html += `<td style="border: 1px solid #ddd; padding: 8px;">${cell}</td>\n`;
+        }
+        html += "</tr>\n";
+      }
+
+      html += "</tbody>\n</table>\n";
+      return html;
+    });
   }
 
   private async saveToWordPress(status: WordPressPostStatus): Promise<void> {

@@ -632,15 +632,11 @@ export class WordPressPostComposer extends Modal {
   }
 
   /**
-   * Generate the enluminure HTML structure matching the working WordPress pages
-   * Creates the medieval drop-cap effect with image floated left
+   * Generate the enluminure HTML structure
+   * Creates the drop-cap effect with image floated left (styled via WordPress theme)
    *
    * Note: The H1 title has its first letter wrapped in screen-reader-text span
    * for SEO, while the enluminure image serves as the visual drop cap.
-   * WordPress's automatic title display should be hidden via theme CSS/PHP.
-   *
-   * IMPORTANT: Uses inline styles with !important to override theme CSS
-   * WordPress sanitizes <style> tags, so we must use inline styles directly on elements
    */
   private generateEnluminureHtml(
     enluminure: WordPressEnluminureInfo,
@@ -650,37 +646,22 @@ export class WordPressPostComposer extends Modal {
     const enluminureUrl = enluminure.wordpressUrl || "";
 
     // Process H1: wrap first letter in screen-reader-text span for SEO
-    // and add inline styles for proper layout
     const processedBodyHtml = bodyHtml.replace(
       /<h1([^>]*)>(.+?)<\/h1>/i,
       (_match, attrs, content) => {
         const trimmedContent = content.trim();
         const firstLetter = trimmedContent.charAt(0);
         const restOfTitle = trimmedContent.slice(1);
-        return `<h1${attrs} style="margin-top: 0 !important; margin-bottom: 1rem !important; clear: none !important;"><span class="screen-reader-text">${firstLetter}</span>${restOfTitle}</h1>`;
+        return `<h1${attrs}><span class="screen-reader-text">${firstLetter}</span>${restOfTitle}</h1>`;
       }
     );
 
-    // Add inline styles to h2 and h3 elements to prevent clearing
-    const finalBodyHtml = processedBodyHtml
-      .replace(
-        /<h2([^>]*)>/g,
-        '<h2$1 style="clear: none !important; margin-top: 2rem; margin-bottom: 1rem;">'
-      )
-      .replace(
-        /<h3([^>]*)>/g,
-        '<h3$1 style="clear: none !important; margin-bottom: 1rem;">'
-      );
-
-    // Build the enluminure structure with:
-    // 1. NO <style> tag - WordPress sanitizes it away
-    // 2. Inline styles directly on elements with !important to override theme CSS
-    // 3. screen-reader-text span for SEO (first letter hidden visually but readable by screen readers)
-    return `<div class="enluminure-container" style="position: relative; margin-bottom: 2rem; max-width: 900px;">
-<div class="enluminure-image-article" style="float: left !important; margin: 0 !important; max-width: 200px !important;">
-<img src="${enluminureUrl}" alt="Image enluminure" style="display: block !important; width: 100% !important; height: auto !important;">
+    // Build the enluminure structure (styling handled by WordPress theme)
+    return `<div class="enluminure-container">
+<div class="enluminure-image-article">
+<img src="${enluminureUrl}" alt="Image enluminure">
 </div>
-${finalBodyHtml}
+${processedBodyHtml}
 </div>`;
   }
 
@@ -703,7 +684,7 @@ ${finalBodyHtml}
     html = html.replace(/^#####\s+(.+)$/gm, "<h5>$1</h5>");
     html = html.replace(/^####\s+(.+)$/gm, "<h4>$1</h4>");
     html = html.replace(/^###\s+(.+)$/gm, "<h3>$1</h3>");
-    html = html.replace(/^##\s+(.+)$/gm, '<h2 style="margin-top: 2rem;">$1</h2>');
+    html = html.replace(/^##\s+(.+)$/gm, "<h2>$1</h2>");
     html = html.replace(/^#\s+(.+)$/gm, "<h1>$1</h1>");
 
     // Bold and italic
@@ -745,10 +726,10 @@ ${finalBodyHtml}
     // Ordered lists
     html = html.replace(/^\d+\.\s+(.+)$/gm, "<li>$1</li>");
 
-    // Horizontal rules with proper spacing
-    html = html.replace(/^---+$/gm, '<hr style="margin-top: 2rem; margin-bottom: 2rem;" />');
-    html = html.replace(/^\*\*\*+$/gm, '<hr style="margin-top: 2rem; margin-bottom: 2rem;" />');
-    html = html.replace(/^___+$/gm, '<hr style="margin-top: 2rem; margin-bottom: 2rem;" />');
+    // Horizontal rules
+    html = html.replace(/^---+$/gm, "<hr />");
+    html = html.replace(/^\*\*\*+$/gm, "<hr />");
+    html = html.replace(/^___+$/gm, "<hr />");
 
     // Paragraphs - wrap text blocks in <p> tags
     const lines = html.split("\n");
@@ -801,6 +782,37 @@ ${finalBodyHtml}
   }
 
   /**
+   * Extract and remove the illustration image (first image after title section) from the HTML
+   * Returns the illustration HTML and the modified content without it
+   * Handles: H1 + img, H1 + H2 + img, H1 + H3 + img patterns
+   */
+  private extractIllustration(html: string): { illustration: string | null; content: string } {
+    // Pattern: <h1>...</h1> optionally followed by <h2> or <h3>, then <img ...>
+    const pattern = /(<h1[^>]*>.*?<\/h1>\s*(?:<h[23][^>]*>.*?<\/h[23]>\s*)?)(<img[^>]+>)/i;
+    const match = html.match(pattern);
+
+    if (match && match[1] && match[2]) {
+      const titleSection = match[1];
+      const imgTag = match[2];
+
+      // Create illustration block (styling handled by WordPress theme)
+      const illustrationBlock = `<div class="article-illustration">
+${imgTag}
+</div>`;
+
+      // Remove the img from after title section (keep title section)
+      const contentWithoutIllustration = html.replace(pattern, titleSection);
+
+      return {
+        illustration: illustrationBlock,
+        content: contentWithoutIllustration
+      };
+    }
+
+    return { illustration: null, content: html };
+  }
+
+  /**
    * Convert markdown tables to HTML tables
    */
   private convertTablesToHtml(text: string): string {
@@ -831,10 +843,10 @@ ${finalBodyHtml}
         }
       }
 
-      // Build HTML table
-      let html = '<table style="border-collapse: collapse; width: 100%;">\n<thead>\n<tr>\n';
+      // Build HTML table (styling handled by WordPress theme)
+      let html = "<table>\n<thead>\n<tr>\n";
       for (const header of headers) {
-        html += `<th style="border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f2f2f2;">${header}</th>\n`;
+        html += `<th>${header}</th>\n`;
       }
       html += "</tr>\n</thead>\n<tbody>\n";
 
@@ -842,7 +854,7 @@ ${finalBodyHtml}
         html += "<tr>\n";
         for (let i = 0; i < headers.length; i++) {
           const cell = row[i] ?? "";
-          html += `<td style="border: 1px solid #ddd; padding: 8px;">${cell}</td>\n`;
+          html += `<td>${cell}</td>\n`;
         }
         html += "</tr>\n";
       }
@@ -887,19 +899,24 @@ ${finalBodyHtml}
     }
 
     try {
+      // Extract illustration (first image after H1) to place it at the very top
+      const { illustration, content: htmlWithoutIllustration } = this.extractIllustration(contentResult.html);
+
       // Build final HTML content
       let finalHtml: string;
       if (contentResult.enluminure && contentResult.enluminure.wordpressUrl) {
         // Has enluminure - wrap content in enluminure structure
-        finalHtml = this.generateEnluminureHtml(
+        const enluminureBlock = this.generateEnluminureHtml(
           contentResult.enluminure,
           this.title,
-          contentResult.html
+          htmlWithoutIllustration
         );
-        this.logger.info("Generated enluminure HTML structure");
+        // Place illustration BEFORE the enluminure block
+        finalHtml = illustration ? `${illustration}\n${enluminureBlock}` : enluminureBlock;
+        this.logger.info("Generated enluminure HTML structure", { hasIllustration: !!illustration });
       } else {
-        // No enluminure - use content as-is
-        finalHtml = contentResult.html;
+        // No enluminure - place illustration before content
+        finalHtml = illustration ? `${illustration}\n${htmlWithoutIllustration}` : htmlWithoutIllustration;
       }
 
       // ===== PAGE PUBLICATION =====

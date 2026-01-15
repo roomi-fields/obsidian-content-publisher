@@ -801,24 +801,37 @@ ${processedBodyHtml}
   /**
    * Extract and remove the illustration image (first image after title section) from the HTML
    * Returns the illustration HTML and the modified content without it
-   * Handles: H1 + img, H1 + H2 + img, H1 + H3 + img patterns
    */
   private extractIllustration(html: string): { illustration: string | null; content: string } {
-    // Pattern: <h1>...</h1> optionally followed by <h2> or <h3>, then <img ...>
-    const pattern = /(<h1[^>]*>.*?<\/h1>\s*(?:<h[23][^>]*>.*?<\/h[23]>\s*)?)(<img[^>]+>)/i;
-    const match = html.match(pattern);
+    // Find the first <img> tag in the content
+    const imgMatch = html.match(/<img[^>]+>/i);
+    if (!imgMatch) {
+      return { illustration: null, content: html };
+    }
 
-    if (match && match[1] && match[2]) {
-      const titleSection = match[1];
-      const imgTag = match[2];
+    const imgTag = imgMatch[0];
 
-      // Create illustration block (styling handled by WordPress theme)
+    // Only extract if the img appears before any substantial content (within first 500 chars after H1)
+    const h1Match = html.match(/<h1[^>]*>[^<]*<\/h1>/i);
+    if (!h1Match) {
+      return { illustration: null, content: html };
+    }
+
+    const h1End = html.indexOf(h1Match[0]) + h1Match[0].length;
+    const imgPos = html.indexOf(imgTag);
+
+    // Check if img is reasonably close after H1 (allowing for H2/H3 subtitle)
+    const contentBetween = html.substring(h1End, imgPos);
+    const hasOnlyHeadersBetween = /^[\s]*(<h[23][^>]*>[^<]*<\/h[23]>[\s]*)*$/i.test(contentBetween);
+
+    if (imgPos > h1End && (imgPos - h1End < 300 || hasOnlyHeadersBetween)) {
+      // Create illustration block
       const illustrationBlock = `<div class="article-illustration">
 ${imgTag}
 </div>`;
 
-      // Remove the img from after title section (keep title section)
-      const contentWithoutIllustration = html.replace(pattern, titleSection);
+      // Remove the img from content
+      const contentWithoutIllustration = html.replace(imgTag, "");
 
       return {
         illustration: illustrationBlock,

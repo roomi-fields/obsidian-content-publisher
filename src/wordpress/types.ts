@@ -149,6 +149,14 @@ export interface WordPressCategoryMapping {
   [category: string]: number;
 }
 
+// Article organization config for auto-moving after publication
+export interface ArticleOrganizationConfig {
+  enabled: boolean;
+  sourceFolder: string;      // ex: "Publications/_brouillons/"
+  destinationBase: string;   // ex: "Publications/re.liance.art/Ressources/"
+  // Categories map directly to subfolders (CNV -> CNV/)
+}
+
 // Single WordPress server configuration
 export interface WordPressServer {
   id: string;
@@ -160,6 +168,8 @@ export interface WordPressServer {
   defaultCategory: string;
   // Polylang multilingual support
   polylang?: PolylangConfig;
+  // Auto-organize articles after publication
+  articleOrganization?: ArticleOrganizationConfig;
 }
 
 // WordPress settings for the plugin (multi-server)

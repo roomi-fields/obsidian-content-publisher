@@ -1191,9 +1191,78 @@ ${imgTag}
 
       // Check for published backlinks that might need updating
       await this.checkAndUpdateBacklinks();
+
+      // Move article to category folder if configured
+      await this.moveArticleAfterPublish();
     } catch (error) {
       this.logger.warn("Failed to update frontmatter", error);
       // Don't show error to user - the publish succeeded
+    }
+  }
+
+  /**
+   * Move article to its category folder after successful publication
+   * Only applies if:
+   * - articleOrganization is enabled in server config
+   * - File is in the configured source folder
+   * - Filename matches pipeline suffix pattern (_\d_[a-z]+.md)
+   */
+  private async moveArticleAfterPublish(): Promise<void> {
+    if (!this.activeFile) return;
+
+    const orgConfig = this.currentServer.articleOrganization;
+    if (!orgConfig?.enabled) {
+      this.logger.debug("Article organization disabled, skipping move");
+      return;
+    }
+
+    const filePath = this.activeFile.path;
+    const fileName = this.activeFile.basename;
+
+    // Check if file is in the source folder
+    if (!filePath.startsWith(orgConfig.sourceFolder)) {
+      this.logger.debug("File not in source folder, skipping move", {
+        filePath,
+        sourceFolder: orgConfig.sourceFolder
+      });
+      return;
+    }
+
+    // Check if filename has pipeline suffix pattern: _\d_[a-z]+
+    const suffixMatch = fileName.match(/_\d_[a-z]+$/i);
+    if (!suffixMatch) {
+      this.logger.debug("Filename has no pipeline suffix, skipping move", { fileName });
+      return;
+    }
+
+    // Extract the clean name (without suffix)
+    const cleanName = fileName.replace(/_\d_[a-z]+$/i, "");
+
+    // Build destination path: destinationBase/category/cleanName.md
+    const destinationPath = `${orgConfig.destinationBase}${this.category}/${cleanName}.md`;
+
+    try {
+      // Check if destination folder exists, create if not
+      const destFolder = `${orgConfig.destinationBase}${this.category}`;
+      const folderExists = this.app.vault.getAbstractFileByPath(destFolder);
+      if (!folderExists) {
+        await this.app.vault.createFolder(destFolder);
+        this.logger.info(`Created destination folder: ${destFolder}`);
+      }
+
+      // Move the file
+      await this.app.vault.rename(this.activeFile, destinationPath);
+
+      this.logger.info("Moved article after publication", {
+        from: filePath,
+        to: destinationPath
+      });
+
+      new Notice(`Article déplacé vers:\n${destinationPath}`);
+    } catch (error) {
+      this.logger.error("Failed to move article after publication", error);
+      // Don't fail the publication - just warn
+      new Notice(`Impossible de déplacer l'article: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

@@ -196,15 +196,33 @@ export class WordPressImageHandler {
 
   /**
    * Resolve wikilink path to vault path
-   * Obsidian wikilinks are relative to vault root, not to the current file
+   * Obsidian wikilinks can be:
+   * 1. Full path from vault root: _Assets/Images/photo.png
+   * 2. Just a filename: photo.png (Obsidian searches the vault)
    */
   resolveWikiLinkPath(wikiPath: string, _basePath: string): string {
-    // Wikilinks in Obsidian are always relative to vault root
-    // So we just return the path as-is (removing any leading /)
-    if (wikiPath.startsWith("/")) {
-      return wikiPath.substring(1);
+    // Remove leading slash if present
+    const cleanPath = wikiPath.startsWith("/") ? wikiPath.substring(1) : wikiPath;
+
+    // First try: exact path from vault root
+    const exactFile = this.vault.getAbstractFileByPath(cleanPath);
+    if (exactFile && exactFile instanceof TFile) {
+      return cleanPath;
     }
-    return wikiPath;
+
+    // Second try: search by filename (like Obsidian does)
+    // This handles cases like ![[IKIGAI.png]] where the file is somewhere in the vault
+    const fileName = cleanPath.split("/").pop() || cleanPath;
+    const allFiles = this.vault.getFiles();
+    const matchingFile = allFiles.find(f => f.name === fileName);
+
+    if (matchingFile) {
+      this.logger.debug(`Resolved wikilink by filename search: ${wikiPath} -> ${matchingFile.path}`);
+      return matchingFile.path;
+    }
+
+    // Fallback: return original path (will likely fail but error will be logged)
+    return cleanPath;
   }
 
   /**

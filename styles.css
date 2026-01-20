@@ -566,3 +566,190 @@
 .linkedin-checkbox-label {
     margin: 0;
 }
+
+/* Notebook Selection Modal */
+.notebook-selection-modal {
+    padding: 1rem;
+}
+
+.notebook-selection-modal h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+}
+
+.notebook-selection-desc {
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+.notebook-list {
+    margin-bottom: 1rem;
+}
+
+.notebook-list h4 {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin: 0.5rem 0;
+}
+
+.notebook-btn {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    margin: 4px 0;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+    color: var(--text-normal);
+    transition: background 0.15s ease;
+}
+
+.notebook-btn:hover {
+    background: var(--background-modifier-hover);
+}
+
+.fallback-btn {
+    opacity: 0.7;
+}
+
+.notebook-cancel {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.cancel-btn {
+    background: transparent;
+    color: var(--text-muted);
+}
+
+.cancel-btn:hover {
+    color: var(--text-normal);
+}
+
+/* Custom notebook input */
+.notebook-custom-input {
+    display: flex;
+    gap: 8px;
+}
+
+.notebook-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.add-btn {
+    flex-shrink: 0;
+    background: var(--interactive-accent) !important;
+    color: var(--text-on-accent) !important;
+}
+
+.add-btn:hover {
+    background: var(--interactive-accent-hover) !important;
+}
+
+/* Pipeline Config Modal */
+.pipeline-config-modal {
+    padding: 1rem;
+    min-width: 350px;
+}
+
+.pipeline-config-modal h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+}
+
+.config-section {
+    margin-bottom: 1.5rem;
+}
+
+.config-section h4 {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    margin: 0 0 0.5rem 0;
+}
+
+.config-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 14px;
+}
+
+.config-custom {
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85em;
+    color: var(--text-muted);
+}
+
+.config-input {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 13px;
+}
+
+.config-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.config-btn {
+    padding: 8px 16px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+}
+
+.config-btn:hover {
+    background: var(--background-modifier-hover);
+}
+
+.config-btn-primary {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+}
+
+.config-btn-primary:hover {
+    background: var(--interactive-accent-hover);
+}
+
+/* New notebook modal */
+.new-notebook-modal {
+    padding: 1rem;
+    min-width: 400px;
+}
+
+.notebook-uuid-input {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 1rem 0;
+}
+
+.url-input {
+    font-family: monospace;
+    font-size: 12px;
+}

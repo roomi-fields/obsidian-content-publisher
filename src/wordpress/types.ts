@@ -39,6 +39,8 @@ export interface WordPressPostPayload {
   excerpt?: string | undefined;
   featured_media?: number | undefined;
   meta?: RankMathMeta | undefined;
+  // Date field (ISO 8601 format) - used to update publication date
+  date?: string | undefined;
   // Polylang fields
   lang?: PolylangLanguage | undefined;
   translations?: Record<PolylangLanguage, number> | undefined;
@@ -83,6 +85,8 @@ export interface WordPressPagePayload {
   slug?: string | undefined;
   excerpt?: string | undefined;
   featured_media?: number | undefined;
+  // Date field (ISO 8601 format) - used to update publication date
+  date?: string | undefined;
 }
 
 // WordPress page response from API
@@ -199,6 +203,8 @@ export interface WordPressFrontmatter {
   focus_keyword?: string;
   // Enluminure image path (drop cap image)
   enluminure?: string;
+  // Illustration image path (main article image)
+  illustration?: string;
   // Content type: page or article
   type?: WordPressContentType;
   // WordPress URLs (set after publication)

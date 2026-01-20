@@ -16,7 +16,9 @@ import { SubstackAuth } from "./src/substack/auth";
 import { SubstackAudience, SubstackSection } from "./src/substack/types";
 import { WordPressAPI } from "./src/wordpress/api";
 import { WordPressPostComposer } from "./src/wordpress/PostComposer";
-import { WordPressCategoryMapping, WordPressServer, PolylangConfig, PolylangCategoryMapping } from "./src/wordpress/types";
+import { WordPressCategoryMapping, WordPressServer, PolylangConfig, PolylangCategoryMapping, WordPressEnluminureInfo, RankMathMeta } from "./src/wordpress/types";
+import { WordPressImageHandler } from "./src/wordpress/imageHandler";
+import { WikiLinkConverter } from "./src/wordpress/wikiLinkConverter";
 import { LinkedInAPI } from "./src/linkedin/api";
 import { LinkedInPostComposer } from "./src/linkedin/PostComposer";
 import { LinkedInVisibility } from "./src/linkedin/types";
@@ -183,9 +185,18 @@ export default class SubstackPublisherPlugin extends Plugin {
         if (file instanceof TFile && file.extension === "md") {
           menu.addItem((item) => {
             item
-              .setTitle("Relancer le pipeline éditorial")
+              .setTitle("(Re)lancer le pipeline éditorial")
               .setIcon("refresh-cw")
               .onClick(() => this.restartPipeline(file));
+          });
+        }
+        // Context menu: batch publish folder to WordPress
+        if (file instanceof TFolder && this.settings.wordpressEnabled) {
+          menu.addItem((item) => {
+            item
+              .setTitle("(Re)publier le répertoire sur WP")
+              .setIcon("upload")
+              .onClick(() => this.batchPublishFolder(file));
           });
         }
       })
@@ -815,6 +826,465 @@ export default class SubstackPublisherPlugin extends Plugin {
       new Notice(`Erreur: ${errorMessage}`);
       this.logger.error("Failed to restart pipeline", error);
     }
+  }
+
+  /**
+   * Batch publish all markdown files in a folder to WordPress
+   * - Publishes each file only once (no duplicate updates from backlinks)
+   * - Shows progress during batch
+   * - Handles errors gracefully
+   */
+  private async batchPublishFolder(folder: TFolder): Promise<void> {
+    if (!this.settings.wordpressEnabled || this.settings.wordpressServers.length === 0) {
+      new Notice("WordPress n'est pas configuré");
+      return;
+    }
+
+    // Collect all markdown files in folder (non-recursive)
+    const mdFiles: TFile[] = [];
+    for (const child of folder.children) {
+      if (child instanceof TFile && child.extension === "md") {
+        // Only include files that have wordpress_id (already published)
+        // or have the required frontmatter for publishing
+        const cache = this.app.metadataCache.getFileCache(child);
+        if (cache?.frontmatter) {
+          mdFiles.push(child);
+        }
+      }
+    }
+
+    if (mdFiles.length === 0) {
+      new Notice(`Aucun fichier markdown dans ${folder.name}`);
+      return;
+    }
+
+    // Show confirmation modal
+    const confirmed = await new Promise<boolean>((resolve) => {
+      new BatchPublishConfirmModal(this.app, folder.name, mdFiles.length, resolve).open();
+    });
+
+    if (!confirmed) {
+      new Notice("Publication annulée");
+      return;
+    }
+
+    // Get default server
+    const server = this.settings.wordpressServers.find(s => s.id === this.settings.wordpressDefaultServerId)
+      ?? this.settings.wordpressServers[0];
+
+    if (!server) {
+      new Notice("Aucun serveur WordPress configuré");
+      return;
+    }
+
+    // Initialize handlers (same as PostComposer)
+    const api = new WordPressAPI(server.baseUrl, server.username, server.password);
+    const imageHandler = new WordPressImageHandler(api, this.app.vault, this.logger);
+    const wikiLinkConverter = new WikiLinkConverter(this.app, this.logger);
+
+    // Track published files to avoid duplicate updates
+    const publishedPaths = new Set<string>();
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: string[] = [];
+
+    new Notice(`Publication de ${mdFiles.length} fichiers...`, 3000);
+
+    for (let i = 0; i < mdFiles.length; i++) {
+      const file = mdFiles[i];
+      if (!file) continue;
+
+      // Skip if already published in this batch
+      if (publishedPaths.has(file.path)) {
+        this.logger.debug(`Skipping already published: ${file.basename}`);
+        continue;
+      }
+
+      try {
+        await this.batchPublishSingleFile(file, api, server, imageHandler, wikiLinkConverter);
+        publishedPaths.add(file.path);
+        successCount++;
+        this.logger.info(`✓ ${file.basename}`);
+      } catch (error) {
+        errorCount++;
+        const msg = error instanceof Error ? error.message : String(error);
+        errors.push(`${file.basename}: ${msg}`);
+        this.logger.error(`Failed to publish ${file.basename}`, error);
+      }
+
+      // Progress notification every 3 files
+      if ((i + 1) % 3 === 0) {
+        new Notice(`Progression: ${i + 1}/${mdFiles.length}`, 2000);
+      }
+    }
+
+    // Final summary
+    let summary = `Publication terminée:\n✓ ${successCount} réussi(s)`;
+    if (errorCount > 0) {
+      summary += `\n✗ ${errorCount} erreur(s)`;
+      this.logger.warn("Batch errors:", errors);
+    }
+    new Notice(summary, 5000);
+  }
+
+  /**
+   * Publish a single file during batch operation
+   * Uses full image processing and wikilink conversion (same as PostComposer)
+   * Does NOT trigger backlink updates (to avoid cascading republishes)
+   */
+  private async batchPublishSingleFile(
+    file: TFile,
+    api: WordPressAPI,
+    server: WordPressServer,
+    imageHandler: WordPressImageHandler,
+    wikiLinkConverter: WikiLinkConverter
+  ): Promise<void> {
+    const cache = this.app.metadataCache.getFileCache(file);
+    if (!cache?.frontmatter) {
+      throw new Error("No frontmatter");
+    }
+
+    const fm = cache.frontmatter;
+    const title = fm.title || file.basename;
+    const wordpressId = fm.wordpress_id as number | undefined;
+    const contentType = fm.type === "page" ? "page" : "article";
+    const enluminurePath = typeof fm.enluminure === "string" ? fm.enluminure : undefined;
+
+    // Read content
+    let content = await this.app.vault.cachedRead(file);
+
+    // Remove frontmatter
+    content = content.replace(/^---[\s\S]*?---\n?/, "");
+
+    // Remove dataviewjs blocks
+    content = content.replace(/```dataviewjs[\s\S]*?```\n*/g, "");
+
+    // Process images - upload to WordPress (including enluminure)
+    const basePath = file.parent?.path || "";
+    const imageResult = await imageHandler.processMarkdownImages(content, basePath, enluminurePath);
+    content = imageResult.processedMarkdown;
+
+    if (imageResult.errors.length > 0) {
+      this.logger.warn(`Image errors for ${file.basename}:`, imageResult.errors);
+    }
+
+    // Process wikilinks - convert to WordPress internal links
+    const wikiLinkResult = wikiLinkConverter.processWikiLinks(content);
+    content = wikiLinkResult.processed;
+
+    if (wikiLinkResult.unresolved.length > 0) {
+      this.logger.debug(`Unresolved wikilinks in ${file.basename}:`, wikiLinkResult.unresolved);
+    }
+
+    // Convert markdown to HTML (full conversion)
+    let html = this.batchMarkdownToHtml(content);
+
+    // Extract illustration (first image after H1)
+    const { illustration, content: htmlWithoutIllustration } = this.extractIllustrationForBatch(html);
+
+    // Build final HTML with enluminure structure if present
+    let finalHtml: string;
+    if (imageResult.enluminure?.wordpressUrl) {
+      // Has enluminure - wrap content
+      const enluminureBlock = this.generateEnluminureHtmlForBatch(
+        imageResult.enluminure,
+        title,
+        htmlWithoutIllustration
+      );
+      finalHtml = illustration ? `${illustration}\n${enluminureBlock}` : enluminureBlock;
+    } else {
+      finalHtml = illustration ? `${illustration}\n${htmlWithoutIllustration}` : htmlWithoutIllustration;
+    }
+
+    // Get category for articles
+    let categoryId: number | undefined;
+    if (contentType === "article") {
+      const category = fm.categorie || fm.category || server.defaultCategory;
+      if (category && server.categoryPageIds[category]) {
+        categoryId = server.categoryPageIds[category];
+      }
+    }
+
+    // Build SEO options
+    const seoOptions: {
+      slug?: string;
+      excerpt?: string;
+      featuredMediaId?: number;
+      rankMathMeta?: RankMathMeta;
+      tags?: number[];
+    } = {};
+
+    if (fm.slug) seoOptions.slug = fm.slug;
+    if (fm.excerpt) seoOptions.excerpt = fm.excerpt;
+    if (imageResult.enluminure?.mediaId) {
+      seoOptions.featuredMediaId = imageResult.enluminure.mediaId;
+    }
+
+    // Rank Math meta
+    if (fm.focus_keyword || fm.excerpt || imageResult.enluminure?.wordpressUrl) {
+      const rankMath: RankMathMeta = {};
+      if (fm.focus_keyword) rankMath.rank_math_focus_keyword = fm.focus_keyword;
+      if (fm.excerpt) rankMath.rank_math_description = fm.excerpt;
+      if (imageResult.enluminure?.wordpressUrl) {
+        rankMath.rank_math_facebook_image = imageResult.enluminure.wordpressUrl;
+        rankMath.rank_math_twitter_use_facebook = "on";
+      }
+      seoOptions.rankMathMeta = rankMath;
+    }
+
+    // Resolve tags
+    if (Array.isArray(fm.tags) && fm.tags.length > 0) {
+      const tagResult = await api.resolveTagIds(fm.tags.filter((t: unknown): t is string => typeof t === "string"));
+      if (tagResult.ids.length > 0) {
+        seoOptions.tags = tagResult.ids;
+      }
+    }
+
+    this.logger.debug(`Batch publishing: ${title}`, { wordpressId, contentType, categoryId, hasEnluminure: !!imageResult.enluminure });
+
+    let result;
+    if (wordpressId) {
+      // Update existing
+      if (contentType === "page") {
+        result = await api.updatePage(wordpressId, {
+          title,
+          content: finalHtml,
+          slug: seoOptions.slug,
+          excerpt: seoOptions.excerpt
+        });
+      } else {
+        result = await api.updatePost(wordpressId, {
+          title,
+          content: finalHtml,
+          categories: categoryId ? [categoryId] : undefined,
+          tags: seoOptions.tags,
+          slug: seoOptions.slug,
+          excerpt: seoOptions.excerpt,
+          meta: seoOptions.rankMathMeta
+        });
+      }
+    } else {
+      // Create new
+      if (contentType === "page") {
+        result = await api.createPage(title, finalHtml, undefined, "publish");
+      } else if (categoryId) {
+        result = await api.createPost(title, finalHtml, [categoryId], "publish", seoOptions);
+      } else {
+        throw new Error(`No category for article: ${title}`);
+      }
+    }
+
+    if (!result.success) {
+      throw new Error(result.error || "Publication failed");
+    }
+
+    // Update frontmatter with WordPress info (if new)
+    if (!wordpressId && result.data) {
+      await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+        frontmatter.type = contentType;
+        frontmatter.wordpress_id = result.data!.id;
+        frontmatter.wordpress_url = result.data!.link;
+        frontmatter.wordpress_slug = result.data!.slug;
+      });
+    }
+  }
+
+  /**
+   * Full markdown to HTML conversion for batch publishing
+   * Same logic as PostComposer.markdownToHtml
+   */
+  private batchMarkdownToHtml(markdown: string): string {
+    let html = markdown;
+
+    // Convert markdown tables to HTML
+    html = this.convertBatchTablesToHtml(html);
+
+    // Headers
+    html = html.replace(/^######\s+(.+)$/gm, "<h6>$1</h6>");
+    html = html.replace(/^#####\s+(.+)$/gm, "<h5>$1</h5>");
+    html = html.replace(/^####\s+(.+)$/gm, "<h4>$1</h4>");
+    html = html.replace(/^###\s+(.+)$/gm, "<h3>$1</h3>");
+    html = html.replace(/^##\s+(.+)$/gm, "<h2>$1</h2>");
+    html = html.replace(/^#\s+(.+)$/gm, "<h1>$1</h1>");
+
+    // Bold and italic
+    html = html.replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>");
+    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+    // Code blocks
+    html = html.replace(
+      /```(\w*)\n([\s\S]*?)```/g,
+      (_, lang, code) => `<pre><code class="language-${lang}">${code.trim()}</code></pre>`
+    );
+
+    // Images (already processed to WordPress URLs)
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+
+    // Links
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
+    // Blockquotes
+    html = html.replace(/^>\s+(.+)$/gm, "<blockquote>$1</blockquote>");
+    html = html.replace(/<\/blockquote>\n<blockquote>/g, "\n");
+
+    // Unordered lists
+    html = html.replace(/^[*-]\s+(.+)$/gm, "<li>$1</li>");
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>\n${match}</ul>\n`);
+
+    // Ordered lists
+    html = html.replace(/^\d+\.\s+(.+)$/gm, "<li>$1</li>");
+
+    // Horizontal rules
+    html = html.replace(/^---+$/gm, "<hr>");
+    html = html.replace(/^\*\*\*+$/gm, "<hr>");
+
+    // Paragraphs
+    const lines = html.split("\n");
+    const result: string[] = [];
+    let inParagraph = false;
+    let paragraphContent: string[] = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const isBlockElement =
+        trimmed.startsWith("<h") ||
+        trimmed.startsWith("<ul") ||
+        trimmed.startsWith("<ol") ||
+        trimmed.startsWith("<li") ||
+        trimmed.startsWith("</ul") ||
+        trimmed.startsWith("</ol") ||
+        trimmed.startsWith("<blockquote") ||
+        trimmed.startsWith("</blockquote") ||
+        trimmed.startsWith("<pre") ||
+        trimmed.startsWith("</pre") ||
+        trimmed.startsWith("<hr") ||
+        trimmed.startsWith("<img") ||
+        trimmed.startsWith("<table") ||
+        trimmed === "";
+
+      if (trimmed === "") {
+        if (inParagraph && paragraphContent.length > 0) {
+          result.push(`<p>${paragraphContent.join("<br>")}</p>`);
+          paragraphContent = [];
+          inParagraph = false;
+        }
+      } else if (isBlockElement) {
+        if (inParagraph && paragraphContent.length > 0) {
+          result.push(`<p>${paragraphContent.join("<br>")}</p>`);
+          paragraphContent = [];
+          inParagraph = false;
+        }
+        result.push(line);
+      } else {
+        inParagraph = true;
+        paragraphContent.push(trimmed);
+      }
+    }
+
+    if (inParagraph && paragraphContent.length > 0) {
+      result.push(`<p>${paragraphContent.join("<br>")}</p>`);
+    }
+
+    let finalHtml = result.join("\n");
+    finalHtml = finalHtml.replace(/^(\s*<p>&nbsp;<\/p>\s*)+/, "");
+    return finalHtml;
+  }
+
+  /**
+   * Convert markdown tables to HTML for batch
+   */
+  private convertBatchTablesToHtml(text: string): string {
+    const tableRegex = /\|(.+)\|\n\|[-:\s|]+\|\n((?:\|.+\|\n?)+)/g;
+    return text.replace(tableRegex, (match) => {
+      const lines = match.trim().split("\n");
+      if (lines.length < 3) return match;
+
+      const headerLine = lines[0] ?? "";
+      const headers = headerLine.split("|").map(h => h.trim()).filter(h => h);
+
+      const rows: string[][] = [];
+      for (let i = 2; i < lines.length; i++) {
+        const rowLine = lines[i] ?? "";
+        const cells = rowLine.split("|").map(c => c.trim()).filter(c => c);
+        if (cells.length > 0) rows.push(cells);
+      }
+
+      let html = "<table>\n<thead>\n<tr>\n";
+      for (const header of headers) {
+        html += `<th>${header}</th>\n`;
+      }
+      html += "</tr>\n</thead>\n<tbody>\n";
+
+      for (const row of rows) {
+        html += "<tr>\n";
+        for (let i = 0; i < headers.length; i++) {
+          html += `<td>${row[i] ?? ""}</td>\n`;
+        }
+        html += "</tr>\n";
+      }
+      html += "</tbody>\n</table>\n";
+      return html;
+    });
+  }
+
+  /**
+   * Extract illustration for batch publishing
+   */
+  private extractIllustrationForBatch(html: string): { illustration: string | null; content: string } {
+    const h1Match = html.match(/<h1[^>]*>[\s\S]*?<\/h1>/i);
+    if (!h1Match) return { illustration: null, content: html };
+
+    const h1End = html.indexOf(h1Match[0]) + h1Match[0].length;
+    const htmlAfterH1 = html.substring(h1End);
+    const imgMatch = htmlAfterH1.match(/<img[^>]+>/i);
+    if (!imgMatch) return { illustration: null, content: html };
+
+    const imgTag = imgMatch[0];
+    const imgPosAfterH1 = htmlAfterH1.indexOf(imgTag);
+    const contentBetween = htmlAfterH1.substring(0, imgPosAfterH1);
+    const hasOnlyHeadersBetween = /^[\s]*(<h[23][^>]*>[\s\S]*?<\/h[23]>[\s]*)*$/i.test(contentBetween);
+
+    if (imgPosAfterH1 < 300 || hasOnlyHeadersBetween) {
+      const illustrationBlock = `<div class="article-illustration">\n${imgTag}\n</div>`;
+      const imgPosInFull = h1End + imgPosAfterH1;
+      const contentWithoutIllustration = html.substring(0, imgPosInFull) + html.substring(imgPosInFull + imgTag.length);
+      return { illustration: illustrationBlock, content: contentWithoutIllustration };
+    }
+
+    return { illustration: null, content: html };
+  }
+
+  /**
+   * Generate enluminure HTML structure for batch
+   */
+  private generateEnluminureHtmlForBatch(
+    enluminure: WordPressEnluminureInfo,
+    _title: string,
+    bodyHtml: string
+  ): string {
+    const enluminureUrl = enluminure.wordpressUrl || "";
+
+    // Process H1: wrap first letter in screen-reader-text
+    const processedBodyHtml = bodyHtml.replace(
+      /<h1([^>]*)>(.+?)<\/h1>/i,
+      (_match, attrs, content) => {
+        const trimmedContent = content.trim();
+        const firstLetter = trimmedContent.charAt(0);
+        const restOfTitle = trimmedContent.slice(1);
+        return `<h1${attrs}><span class="screen-reader-text">${firstLetter}</span>${restOfTitle}</h1>`;
+      }
+    );
+
+    return `<div class="enluminure-container">
+<div class="enluminure-image-article">
+<img src="${enluminureUrl}" alt="Image enluminure">
+</div>
+${processedBodyHtml}
+</div>`;
   }
 }
 
@@ -1805,6 +2275,74 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       },
     );
     modal.open();
+  }
+}
+
+/**
+ * Confirmation modal for batch publishing a folder
+ */
+class BatchPublishConfirmModal extends Modal {
+  private folderName: string;
+  private fileCount: number;
+  private resolve: (confirmed: boolean) => void;
+
+  constructor(
+    app: App,
+    folderName: string,
+    fileCount: number,
+    resolve: (confirmed: boolean) => void
+  ) {
+    super(app);
+    this.folderName = folderName;
+    this.fileCount = fileCount;
+    this.resolve = resolve;
+  }
+
+  override onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h3", { text: "Publier le répertoire sur WordPress" });
+
+    contentEl.createEl("p", {
+      text: `Vous êtes sur le point de publier ${this.fileCount} fichier(s) du dossier "${this.folderName}" sur WordPress.`
+    });
+
+    contentEl.createEl("p", {
+      text: "Les articles déjà publiés seront mis à jour, les nouveaux seront créés.",
+      cls: "batch-publish-info"
+    });
+
+    contentEl.createEl("p", {
+      text: "⚠️ Les mises à jour de backlinks sont désactivées pendant le batch pour éviter les doublons.",
+      cls: "batch-publish-warning"
+    });
+
+    const buttonsDiv = contentEl.createDiv({ cls: "batch-publish-buttons" });
+    buttonsDiv.style.display = "flex";
+    buttonsDiv.style.gap = "10px";
+    buttonsDiv.style.justifyContent = "flex-end";
+    buttonsDiv.style.marginTop = "20px";
+
+    const cancelBtn = buttonsDiv.createEl("button", { text: "Annuler" });
+    cancelBtn.addEventListener("click", () => {
+      this.resolve(false);
+      this.close();
+    });
+
+    const confirmBtn = buttonsDiv.createEl("button", {
+      text: `Publier ${this.fileCount} fichiers`,
+      cls: "mod-cta"
+    });
+    confirmBtn.addEventListener("click", () => {
+      this.resolve(true);
+      this.close();
+    });
+  }
+
+  override onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
   }
 }
 

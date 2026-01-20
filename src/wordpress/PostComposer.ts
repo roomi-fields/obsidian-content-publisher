@@ -51,6 +51,8 @@ export class WordPressPostComposer extends Modal {
   private contentTypeSelectEl: HTMLSelectElement | null = null;
   private existingPostId: number | null = null;
   private existingPageId: number | null = null;
+  // Option to update publication date on WordPress
+  private updatePublicationDate: boolean = false;
 
   constructor(
     app: App,
@@ -315,6 +317,29 @@ export class WordPressPostComposer extends Modal {
       typeInfo.setText(`Type: ${typeLabel}${isUpdate ? " (updating existing)" : ""}`);
     }
 
+    // Show "update publication date" checkbox only when updating
+    const isUpdate = this.existingPostId || this.existingPageId;
+    if (isUpdate) {
+      const dateOptionContainer = contentEl.createDiv({
+        cls: "wordpress-date-option"
+      });
+      dateOptionContainer.style.marginTop = "12px";
+      dateOptionContainer.style.display = "flex";
+      dateOptionContainer.style.alignItems = "center";
+      dateOptionContainer.style.gap = "8px";
+      const dateCheckbox = dateOptionContainer.createEl("input", {
+        type: "checkbox",
+        attr: { id: "update-date-checkbox" }
+      });
+      dateOptionContainer.createEl("label", {
+        text: "Mettre à jour la date de publication",
+        attr: { for: "update-date-checkbox" }
+      });
+      dateCheckbox.addEventListener("change", () => {
+        this.updatePublicationDate = dateCheckbox.checked;
+      });
+    }
+
     // Buttons
     const buttonContainer = contentEl.createDiv({
       cls: "wordpress-button-container"
@@ -479,12 +504,19 @@ export class WordPressPostComposer extends Modal {
         parsed.title = fm.title;
       }
       // Check for both "categorie" (French) and "category" (English)
+      // Also handle array format (take first element)
       if (typeof fm.categorie === "string") {
         parsed.category = fm.categorie;
         this.logger.debug("Found frontmatter categorie (French)", { value: fm.categorie });
+      } else if (Array.isArray(fm.categorie) && fm.categorie.length > 0) {
+        parsed.category = String(fm.categorie[0]);
+        this.logger.debug("Found frontmatter categorie (French, array)", { value: parsed.category });
       } else if (typeof fm.category === "string") {
         parsed.category = fm.category;
         this.logger.debug("Found frontmatter category (English)", { value: fm.category });
+      } else if (Array.isArray(fm.category) && fm.category.length > 0) {
+        parsed.category = String(fm.category[0]);
+        this.logger.debug("Found frontmatter category (English, array)", { value: parsed.category });
       } else {
         this.logger.debug("No category found in frontmatter", {
           categorieType: typeof fm.categorie,
@@ -520,6 +552,11 @@ export class WordPressPostComposer extends Modal {
       if (typeof fm.enluminure === "string") {
         parsed.enluminure = fm.enluminure;
         this.logger.debug("Found frontmatter enluminure", { enluminure: fm.enluminure });
+      }
+      // Parse illustration path
+      if (typeof fm.illustration === "string") {
+        parsed.illustration = fm.illustration;
+        this.logger.debug("Found frontmatter illustration", { illustration: fm.illustration });
       }
       // Parse content type (page or article)
       if (fm.type === "page" || fm.type === "article") {
@@ -803,35 +840,71 @@ ${processedBodyHtml}
    * Returns the illustration HTML and the modified content without it
    */
   private extractIllustration(html: string): { illustration: string | null; content: string } {
-    // Find the first <img> tag in the content
-    const imgMatch = html.match(/<img[^>]+>/i);
-    if (!imgMatch) {
-      return { illustration: null, content: html };
-    }
+    // Strategy: Find the illustration image based on frontmatter or position
+    // The illustration can be BEFORE or AFTER H1, but should be near it
+    // We exclude enluminure images (which contain "enluminure" in the path)
 
-    const imgTag = imgMatch[0];
-
-    // Only extract if the img appears before any substantial content (within first 500 chars after H1)
-    const h1Match = html.match(/<h1[^>]*>[^<]*<\/h1>/i);
+    // First find the H1 (use [\s\S]*? to allow inner tags like <span>)
+    const h1Match = html.match(/<h1[^>]*>[\s\S]*?<\/h1>/i);
     if (!h1Match) {
       return { illustration: null, content: html };
     }
 
-    const h1End = html.indexOf(h1Match[0]) + h1Match[0].length;
-    const imgPos = html.indexOf(imgTag);
+    const h1Start = html.indexOf(h1Match[0]);
+    const h1End = h1Start + h1Match[0].length;
 
-    // Check if img is reasonably close after H1 (allowing for H2/H3 subtitle)
-    const contentBetween = html.substring(h1End, imgPos);
-    const hasOnlyHeadersBetween = /^[\s]*(<h[23][^>]*>[^<]*<\/h[23]>[\s]*)*$/i.test(contentBetween);
+    // Find all images in the HTML
+    const imgRegex = /<img[^>]+>/gi;
+    let imgMatch;
+    let illustrationImg: string | null = null;
+    let illustrationPos: number = -1;
 
-    if (imgPos > h1End && (imgPos - h1End < 300 || hasOnlyHeadersBetween)) {
+    while ((imgMatch = imgRegex.exec(html)) !== null) {
+      const imgTag = imgMatch[0];
+      const imgPos = imgMatch.index;
+
+      // Skip enluminure images
+      if (/enluminure/i.test(imgTag)) {
+        continue;
+      }
+
+      // Check if this image matches the frontmatter illustration path
+      if (this.frontmatter.illustration) {
+        const illustrationName = this.frontmatter.illustration.split("/").pop()?.replace(/\.[^.]+$/, "") || "";
+        if (imgTag.includes(illustrationName)) {
+          illustrationImg = imgTag;
+          illustrationPos = imgPos;
+          break; // Found the exact illustration from frontmatter
+        }
+      }
+
+      // Otherwise, look for an image close to H1 (within 500 chars before or after)
+      const distanceBefore = h1Start - imgPos;
+      const distanceAfter = imgPos - h1End;
+
+      // Image is before H1 but close (not more than 500 chars before H1 start)
+      if (imgPos < h1Start && distanceBefore < 500 && distanceBefore > 0) {
+        illustrationImg = imgTag;
+        illustrationPos = imgPos;
+        // Don't break - keep looking for image after H1 which is preferred
+      }
+      // Image is after H1 but close (within 300 chars or only headers between)
+      else if (imgPos > h1End && distanceAfter < 300) {
+        illustrationImg = imgTag;
+        illustrationPos = imgPos;
+        break; // Prefer image after H1
+      }
+    }
+
+    if (illustrationImg && illustrationPos >= 0) {
       // Create illustration block
       const illustrationBlock = `<div class="article-illustration">
-${imgTag}
+${illustrationImg}
 </div>`;
 
-      // Remove the img from content
-      const contentWithoutIllustration = html.replace(imgTag, "");
+      // Remove the img from original content
+      const contentWithoutIllustration = html.substring(0, illustrationPos) +
+                                          html.substring(illustrationPos + illustrationImg.length);
 
       return {
         illustration: illustrationBlock,
@@ -921,14 +994,13 @@ ${imgTag}
       return;
     }
 
-    const contentResult = await this.getHtmlContent();
-    if (!contentResult) {
-      // Re-enable buttons if content fetch fails
-      this.setButtonsDisabled(false);
-      return;
-    }
-
     try {
+      const contentResult = await this.getHtmlContent();
+      if (!contentResult) {
+        // Re-enable buttons if content fetch fails
+        this.setButtonsDisabled(false);
+        return;
+      }
       // Extract illustration (first image after H1) to place it at the very top
       const { illustration, content: htmlWithoutIllustration } = this.extractIllustration(contentResult.html);
 
@@ -1043,7 +1115,7 @@ ${imgTag}
       if (existingId) {
         // Update existing article
         this.logger.info(`Updating existing article: ${existingId}`);
-        result = await this.api.updatePost(existingId, {
+        const updatePayload: Partial<import("./types").WordPressPostPayload> = {
           title: this.title,
           content: finalHtml,
           status,
@@ -1052,7 +1124,12 @@ ${imgTag}
           slug: seoOptions.slug,
           excerpt: seoOptions.excerpt,
           meta: seoOptions.rankMathMeta
-        });
+        };
+        // Add current date if user wants to update publication date
+        if (this.updatePublicationDate) {
+          updatePayload.date = new Date().toISOString();
+        }
+        result = await this.api.updatePost(existingId, updatePayload);
       } else {
         // Create new article
         result = await this.api.createPost(
@@ -1124,13 +1201,18 @@ ${imgTag}
       if (existingId) {
         // Update existing page
         this.logger.info(`Updating existing page: ${existingId}`);
-        result = await this.api.updatePage(existingId, {
+        const updatePayload: Partial<import("./types").WordPressPagePayload> = {
           title: this.title,
           content: finalHtml,
           status,
           slug: this.frontmatter.slug,
           excerpt: this.frontmatter.excerpt
-        });
+        };
+        // Add current date if user wants to update publication date
+        if (this.updatePublicationDate) {
+          updatePayload.date = new Date().toISOString();
+        }
+        result = await this.api.updatePage(existingId, updatePayload);
       } else {
         // Create new page
         result = await this.api.createPage(
@@ -1255,12 +1337,26 @@ ${imgTag}
     const destinationPath = `${orgConfig.destinationBase}${this.category}/${cleanName}.md`;
 
     try {
-      // Check if destination folder exists, create if not
+      // Clean up the file content before moving: remove dataviewjs blocks
+      let content = await this.app.vault.read(this.activeFile);
+      const originalContent = content;
+
+      // Remove dataviewjs code blocks (validation buttons, etc.)
+      content = content.replace(/```dataviewjs[\s\S]*?```\n*/g, "");
+
+      // Only write if content changed
+      if (content !== originalContent) {
+        await this.app.vault.modify(this.activeFile, content);
+        this.logger.info("Removed dataviewjs blocks from article");
+      }
+
+      // Ensure destination folder exists
       const destFolder = `${orgConfig.destinationBase}${this.category}`;
-      const folderExists = this.app.vault.getAbstractFileByPath(destFolder);
-      if (!folderExists) {
+      try {
         await this.app.vault.createFolder(destFolder);
         this.logger.info(`Created destination folder: ${destFolder}`);
+      } catch {
+        // Folder already exists, that's fine
       }
 
       // Move the file
@@ -1272,10 +1368,49 @@ ${imgTag}
       });
 
       new Notice(`Article déplacé vers:\n${destinationPath}`);
+
+      // If this was a _6_preprint, delete all other pipeline files (_1 to _5)
+      if (/_6_/i.test(suffixMatch[0])) {
+        await this.cleanupPipelineFiles(orgConfig.sourceFolder, cleanName);
+      }
     } catch (error) {
       this.logger.error("Failed to move article after publication", error);
       // Don't fail the publication - just warn
       new Notice(`Impossible de déplacer l'article: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Delete pipeline files (_1 to _5) after successful _6_preprint publication
+   */
+  private async cleanupPipelineFiles(sourceFolder: string, baseName: string): Promise<void> {
+    const pipelineSuffixes = ["_1_", "_2_", "_3_", "_4_", "_5_"];
+    let deletedCount = 0;
+
+    // Get all files in the source folder
+    const files = this.app.vault.getFiles().filter(f => f.path.startsWith(sourceFolder));
+
+    for (const file of files) {
+      // Check if file matches the base name and has a pipeline suffix _1 to _5
+      if (file.basename.startsWith(baseName)) {
+        const hasPipelineSuffix = pipelineSuffixes.some(suffix =>
+          file.basename.includes(suffix)
+        );
+
+        if (hasPipelineSuffix) {
+          try {
+            await this.app.vault.delete(file);
+            this.logger.info(`Deleted pipeline file: ${file.path}`);
+            deletedCount++;
+          } catch (error) {
+            this.logger.warn(`Failed to delete pipeline file: ${file.path}`, error);
+          }
+        }
+      }
+    }
+
+    if (deletedCount > 0) {
+      new Notice(`${deletedCount} fichier(s) pipeline supprimé(s)`);
     }
   }
 

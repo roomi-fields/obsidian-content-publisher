@@ -6,6 +6,8 @@ import {
   Plugin,
   PluginSettingTab,
   Setting,
+  TFile,
+  TFolder,
 } from "obsidian";
 import { Logger, LogLevel, createLogger } from "./src/utils/logger";
 import { SubstackAPI } from "./src/substack/api";
@@ -174,6 +176,20 @@ export default class SubstackPublisherPlugin extends Plugin {
         this.publishToLinkedIn();
       },
     });
+
+    // Context menu: restart editorial pipeline
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file) => {
+        if (file instanceof TFile && file.extension === "md") {
+          menu.addItem((item) => {
+            item
+              .setTitle("Relancer le pipeline éditorial")
+              .setIcon("refresh-cw")
+              .onClick(() => this.restartPipeline(file));
+          });
+        }
+      })
+    );
 
     this.addSettingTab(new SubstackPublisherSettingTab(this.app, this));
   }
@@ -344,6 +360,744 @@ export default class SubstackPublisherPlugin extends Plugin {
     return this.settings.wordpressServers.find(
       (s) => s.id === this.settings.wordpressDefaultServerId,
     );
+  }
+
+  // Known notebooks from PipelineConfigModal
+  private readonly knownNotebooks = ["cnv", "ifs", "osho", "polyvagal", "plutchik", "diamant", "psychedeliques"];
+  private readonly fallbackCategories = ["regards", "psycho", "autre"];
+
+  /**
+   * Check if a notebook ID is a fallback category (no NotebookLM needed)
+   */
+  private isFallbackCategory(notebookId: string): boolean {
+    return this.fallbackCategories.includes(notebookId.toLowerCase());
+  }
+
+  /**
+   * Check if a notebook UUID is registered in MCP
+   */
+  private async isNotebookInMCP(uuid: string): Promise<boolean> {
+    const MCP_URL = "http://localhost:3000";
+    try {
+      const response = await fetch(`${MCP_URL}/notebooks`);
+      if (!response.ok) return false;
+      const result = await response.json();
+      if (!result.success || !result.data?.notebooks) return false;
+      return result.data.notebooks.some((n: { url?: string }) => n.url?.includes(uuid));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get notebook config from config.md
+   */
+  private async getNotebookFromConfig(notebookId: string): Promise<{ uuid: string; name: string } | null> {
+    const CONFIG_PATH = "_Assets/Prompts Pipeline/config.md";
+    const configFile = this.app.vault.getAbstractFileByPath(CONFIG_PATH);
+    if (!configFile || !(configFile instanceof TFile)) return null;
+
+    try {
+      const content = await this.app.vault.read(configFile);
+      const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/);
+      if (!jsonMatch || !jsonMatch[1]) return null;
+
+      const config = JSON.parse(jsonMatch[1]);
+      const nb = config.notebooks?.[notebookId.toLowerCase()];
+      if (!nb) return null;
+
+      return { uuid: nb.uuid, name: nb.name };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get all notebooks from config.md
+   */
+  private async getAllNotebooksFromConfig(): Promise<Array<{ id: string; name: string }>> {
+    const CONFIG_PATH = "_Assets/Prompts Pipeline/config.md";
+    const configFile = this.app.vault.getAbstractFileByPath(CONFIG_PATH);
+    if (!configFile || !(configFile instanceof TFile)) return [];
+
+    try {
+      const content = await this.app.vault.read(configFile);
+      const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/);
+      if (!jsonMatch || !jsonMatch[1]) return [];
+
+      const config = JSON.parse(jsonMatch[1]);
+      const notebooks: Array<{ id: string; name: string }> = [];
+
+      for (const [id, nb] of Object.entries(config.notebooks || {})) {
+        const entry = nb as { name?: string };
+        if (entry.name) {
+          notebooks.push({ id, name: entry.name });
+        }
+      }
+
+      return notebooks;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Try to register a notebook in MCP via auto-discover
+   * Returns success status and error message if failed
+   */
+  private async tryRegisterNotebook(id: string, url: string): Promise<{ success: boolean; error?: string }> {
+    const MCP_URL = "http://localhost:3000";
+
+    try {
+      new Notice("Enregistrement du notebook...", 3000);
+
+      const mcpResponse = await fetch(`${MCP_URL}/notebooks/auto-discover`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+      });
+
+      const mcpResult = await mcpResponse.json();
+
+      if (!mcpResponse.ok || mcpResult.error) {
+        const errorMsg = mcpResult.error || mcpResult.message || "Erreur inconnue";
+        this.logger.warn("MCP auto-discover failed", { error: errorMsg });
+
+        // Parse error type
+        if (errorMsg.includes("access") || errorMsg.includes("inaccessible") || errorMsg.includes("permission")) {
+          return { success: false, error: "Le compte MCP n'a pas accès à ce notebook" };
+        } else if (errorMsg.includes("not found") || errorMsg.includes("doesn't exist")) {
+          return { success: false, error: "Notebook non trouvé - vérifiez l'URL" };
+        } else {
+          return { success: false, error: errorMsg.substring(0, 100) };
+        }
+      }
+
+      // Success - also update config.md with discovered metadata
+      const notebook = mcpResult.notebook;
+      if (notebook) {
+        await this.updateNotebookInConfig(id, url, notebook.name, notebook.description);
+        new Notice(`✓ Notebook "${notebook.name}" enregistré`, 3000);
+      }
+
+      return { success: true };
+
+    } catch (mcpError) {
+      const errorMsg = mcpError instanceof Error ? mcpError.message : String(mcpError);
+      if (errorMsg.includes("fetch") || errorMsg.includes("ECONNREFUSED")) {
+        return { success: false, error: "MCP NotebookLM non démarré (localhost:3000)" };
+      }
+      return { success: false, error: errorMsg };
+    }
+  }
+
+  /**
+   * Update notebook entry in config.md (or add if not exists)
+   */
+  private async updateNotebookInConfig(id: string, url: string, name: string, description: string): Promise<void> {
+    const CONFIG_PATH = "_Assets/Prompts Pipeline/config.md";
+    const configFile = this.app.vault.getAbstractFileByPath(CONFIG_PATH);
+    if (!configFile || !(configFile instanceof TFile)) return;
+
+    const uuidMatch = url.match(/notebook\/([a-f0-9-]+)/i);
+    const uuid = uuidMatch ? uuidMatch[1] : url;
+
+    try {
+      let configContent = await this.app.vault.read(configFile);
+      const jsonMatch = configContent.match(/```json\n([\s\S]*?)\n```/);
+      if (!jsonMatch || !jsonMatch[1]) return;
+
+      const config = JSON.parse(jsonMatch[1]);
+      config.notebooks[id] = { uuid, name, description: description || id };
+
+      const newJson = JSON.stringify(config, null, 2);
+      configContent = configContent.replace(/```json\n[\s\S]*?\n```/, "```json\n" + newJson + "\n```");
+      await this.app.vault.modify(configFile, configContent);
+    } catch (e) {
+      this.logger.error("Failed to update config.md", e);
+    }
+  }
+
+  /**
+   * Add a new notebook to MCP (auto-discover) and config.md
+   */
+  private async addNotebookToConfig(id: string, url: string): Promise<boolean> {
+    const CONFIG_PATH = "_Assets/Prompts Pipeline/config.md";
+    const MCP_URL = "http://localhost:3000";
+
+    // 1. Use auto-discover to add notebook and get metadata
+    let notebook: { name: string; description: string; url: string } | null = null;
+    try {
+      new Notice("Découverte du notebook...", 3000);
+
+      const mcpResponse = await fetch(`${MCP_URL}/notebooks/auto-discover`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+      });
+
+      const mcpResult = await mcpResponse.json();
+
+      if (!mcpResponse.ok || mcpResult.error) {
+        const errorMsg = mcpResult.error || mcpResult.message || "Erreur inconnue";
+        if (errorMsg.includes("access") || errorMsg.includes("inaccessible") || errorMsg.includes("permission")) {
+          new Notice(`⚠️ Le compte MCP n'a pas accès à ce notebook.\nPartagez-le avec le compte du MCP.`, 8000);
+        } else if (errorMsg.includes("not found") || errorMsg.includes("doesn't exist")) {
+          new Notice(`⚠️ Notebook non trouvé. Vérifiez l'URL.`, 5000);
+        } else {
+          new Notice(`⚠️ MCP: ${errorMsg.substring(0, 100)}`, 5000);
+        }
+        this.logger.warn("MCP auto-discover failed", { error: errorMsg });
+        return false;
+      }
+
+      notebook = mcpResult.notebook;
+      new Notice(`✓ Notebook "${notebook?.name}" découvert`, 3000);
+      this.logger.info("Notebook auto-discovered", mcpResult);
+
+    } catch (mcpError) {
+      const errorMsg = mcpError instanceof Error ? mcpError.message : String(mcpError);
+      if (errorMsg.includes("fetch") || errorMsg.includes("ECONNREFUSED")) {
+        new Notice(`⚠️ MCP NotebookLM non démarré (localhost:3000)`, 5000);
+      } else {
+        new Notice(`⚠️ MCP: ${errorMsg}`, 5000);
+      }
+      this.logger.warn("MCP not available", mcpError);
+      return false;
+    }
+
+    if (!notebook) {
+      new Notice("Erreur: notebook non retourné par MCP");
+      return false;
+    }
+
+    // 2. Extract UUID from URL
+    const uuidMatch = url.match(/notebook\/([a-f0-9-]+)/i);
+    const uuid = uuidMatch ? uuidMatch[1] : url;
+
+    // 3. Add to config.md
+    const configFile = this.app.vault.getAbstractFileByPath(CONFIG_PATH);
+    if (!configFile || !(configFile instanceof TFile)) {
+      new Notice(`Config non trouvée: ${CONFIG_PATH}`);
+      return false;
+    }
+
+    let configContent = await this.app.vault.read(configFile);
+
+    const jsonMatch = configContent.match(/```json\n([\s\S]*?)\n```/);
+    if (!jsonMatch || !jsonMatch[1]) {
+      new Notice("Bloc JSON non trouvé dans config.md");
+      return false;
+    }
+
+    try {
+      const config = JSON.parse(jsonMatch[1]);
+
+      // Add the new notebook with auto-discovered metadata
+      config.notebooks[id] = {
+        uuid: uuid,
+        name: notebook.name,
+        description: notebook.description || id
+      };
+
+      const newJson = JSON.stringify(config, null, 2);
+      configContent = configContent.replace(/```json\n[\s\S]*?\n```/, "```json\n" + newJson + "\n```");
+
+      await this.app.vault.modify(configFile, configContent);
+      this.logger.info("Notebook added to config", { id, name: notebook.name, uuid });
+      return true;
+
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      new Notice(`Erreur parsing config.md: ${errorMsg}`);
+      this.logger.error("Failed to parse config.md", e);
+      return false;
+    }
+  }
+
+  /**
+   * Restart the editorial pipeline for a file
+   * - Checks for categorie in frontmatter, prompts if missing
+   * - Extracts the base name (without pipeline suffix)
+   * - Renames to {basename}_1_brouillon.md
+   * - Moves to Publications/_brouillons/
+   * - Injects the workflow button if not already present
+   */
+  private async restartPipeline(file: TFile): Promise<void> {
+    const TEMPLATE_PATH = "_Assets/Prompts Pipeline/workflow-button.template.md";
+    const STYLES_FOLDER = "_Assets/Prompts Pipeline/styles";
+    const BROUILLONS_FOLDER = "Publications/_brouillons";
+    const PIPELINE_SUFFIX_REGEX = /_\d_[a-z]+$/i;
+
+    try {
+      // 1. Scan styles/ folder to get available categories
+      const stylesFolder = this.app.vault.getAbstractFileByPath(STYLES_FOLDER);
+      const availableCategories: string[] = [];
+
+      if (stylesFolder && stylesFolder instanceof TFolder) {
+        for (const child of stylesFolder.children) {
+          if (child instanceof TFile && child.extension === "md") {
+            const match = child.basename.match(/^style-(.+)$/);
+            if (match && match[1] && match[1] !== "base") {
+              availableCategories.push(match[1]);
+            }
+          }
+        }
+      }
+
+      // 2. Read file content and check for notebook/categorie
+      let content = await this.app.vault.read(file);
+      const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      let hasNotebook = false;
+      let hasCategorie = false;
+
+      if (frontmatterMatch && frontmatterMatch[1]) {
+        hasNotebook = /^notebook:/m.test(frontmatterMatch[1]);
+        hasCategorie = /^categorie:/m.test(frontmatterMatch[1]);
+      }
+
+      // 3. If missing notebook or categorie, prompt user
+      if (!hasNotebook || !hasCategorie) {
+        // Get notebooks from config.md
+        const availableNotebooks = await this.getAllNotebooksFromConfig();
+
+        const config = await new Promise<PipelineConfig | null>((resolve) => {
+          new PipelineConfigModal(
+            this.app,
+            resolve,
+            availableCategories,
+            availableNotebooks,
+            !hasNotebook,
+            !hasCategorie
+          ).open();
+        });
+
+        if (!config) {
+          new Notice("Opération annulée");
+          return;
+        }
+
+        // 3b. If notebook specified and not a fallback category, verify it's in MCP
+        if (config.notebook && !this.isFallbackCategory(config.notebook)) {
+          const notebookConfig = await this.getNotebookFromConfig(config.notebook);
+
+          // Check if notebook is in MCP (by UUID if we have it)
+          const isInMCP = notebookConfig
+            ? await this.isNotebookInMCP(notebookConfig.uuid)
+            : false;
+
+          if (!isInMCP) {
+            if (notebookConfig) {
+              // Notebook in config.md but not in MCP - try to auto-register with known UUID
+              const url = `https://notebooklm.google.com/notebook/${notebookConfig.uuid}`;
+
+              // Retry loop
+              let registered = false;
+              while (!registered) {
+                const result = await this.tryRegisterNotebook(config.notebook, url);
+
+                if (result.success) {
+                  registered = true;
+                } else {
+                  // Registration failed - show options modal
+                  const action = await new Promise<"retry" | "change" | "skip">((resolve) => {
+                    new NotebookErrorModal(this.app, config.notebook!, result.error || "Erreur inconnue", resolve).open();
+                  });
+
+                  if (action === "retry") {
+                    // Loop will retry
+                    continue;
+                  } else if (action === "change") {
+                    // User wants to choose another notebook - abort this pipeline
+                    new Notice("Relancez le pipeline pour choisir un autre notebook");
+                    return;
+                  } else {
+                    // action === "skip" - continue without NotebookLM
+                    break;
+                  }
+                }
+              }
+            } else {
+              // New notebook not in config.md - ask for URL
+              const notebookUrl = await new Promise<string | null>((resolve) => {
+                new NewNotebookModal(this.app, config.notebook!, resolve).open();
+              });
+
+              if (notebookUrl) {
+                const result = await this.tryRegisterNotebook(config.notebook, notebookUrl);
+                if (!result.success) {
+                  new Notice(`Notebook non ajouté: ${result.error?.substring(0, 50)}`);
+                }
+              }
+            }
+          }
+        }
+
+        // Add notebook and/or categorie to frontmatter
+        let newFields = "";
+        if (!hasNotebook && config.notebook) {
+          newFields += `notebook: ${config.notebook}\n`;
+        }
+        if (!hasCategorie && config.categorie) {
+          newFields += `categorie: ${config.categorie}\n`;
+        }
+
+        if (frontmatterMatch) {
+          const frontmatterContent = frontmatterMatch[1];
+          const newFrontmatter = `---\n${frontmatterContent}\n${newFields}---`;
+          content = content.replace(/^---\n[\s\S]*?\n---/, newFrontmatter);
+        } else {
+          content = `---\n${newFields}---\n\n${content}`;
+        }
+      }
+
+      // 4. Load the template and extract dataviewjs block
+      const templateFile = this.app.vault.getAbstractFileByPath(TEMPLATE_PATH);
+      if (!templateFile || !(templateFile instanceof TFile)) {
+        new Notice(`Template non trouvé: ${TEMPLATE_PATH}`);
+        return;
+      }
+
+      const templateContent = await this.app.vault.read(templateFile);
+      const dataviewjsMatch = templateContent.match(/```dataviewjs[\s\S]*?```/);
+      if (!dataviewjsMatch) {
+        new Notice("Bloc dataviewjs non trouvé dans le template");
+        return;
+      }
+      const workflowButton = dataviewjsMatch[0];
+
+      // 4. Extract base name (without pipeline suffix)
+      const basename = file.basename.replace(PIPELINE_SUFFIX_REGEX, "");
+
+      // 5. Inject workflow button after frontmatter if not already present
+      if (!content.includes("```dataviewjs")) {
+        const fmMatch = content.match(/^---[\s\S]*?---\n?/);
+        if (fmMatch) {
+          const frontmatter = fmMatch[0];
+          const restContent = content.slice(frontmatter.length);
+          content = `${frontmatter}\n${workflowButton}\n\n${restContent}`;
+        } else {
+          content = `${workflowButton}\n\n${content}`;
+        }
+      }
+
+      // 6. Create destination folder if needed
+      const folderExists = this.app.vault.getAbstractFileByPath(BROUILLONS_FOLDER);
+      if (!folderExists) {
+        await this.app.vault.createFolder(BROUILLONS_FOLDER);
+      }
+
+      // 7. Build destination path
+      const newFileName = `${basename}_1_brouillon.md`;
+      const destinationPath = `${BROUILLONS_FOLDER}/${newFileName}`;
+
+      // 8. Check if destination already exists
+      const existingFile = this.app.vault.getAbstractFileByPath(destinationPath);
+      if (existingFile && existingFile.path !== file.path) {
+        new Notice(`Fichier existant: ${destinationPath}`);
+        return;
+      }
+
+      // 9. Write updated content
+      await this.app.vault.modify(file, content);
+
+      // 10. Move/rename the file
+      await this.app.vault.rename(file, destinationPath);
+
+      new Notice(`✓ ${basename}`);
+      this.logger.info("Pipeline restarted", {
+        from: file.path,
+        to: destinationPath
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      new Notice(`Erreur: ${errorMessage}`);
+      this.logger.error("Failed to restart pipeline", error);
+    }
+  }
+}
+
+/**
+ * Result from PipelineConfigModal
+ */
+interface PipelineConfig {
+  notebook: string | null;
+  categorie: string | null;
+}
+
+/**
+ * Notebook configuration from config.md
+ */
+interface NotebookEntry {
+  uuid: string;
+  name: string;
+  description?: string;
+}
+
+/**
+ * Modal for entering a new notebook URL
+ */
+class NewNotebookModal extends Modal {
+  private resolve: (value: string | null) => void;
+  private notebookId: string;
+
+  constructor(app: App, notebookId: string, resolve: (value: string | null) => void) {
+    super(app);
+    this.notebookId = notebookId;
+    this.resolve = resolve;
+  }
+
+  override onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("new-notebook-modal");
+
+    contentEl.createEl("h3", { text: "Nouveau notebook" });
+    contentEl.createEl("p", {
+      text: `Notebook "${this.notebookId}" - entrez l'URL pour l'ajouter.`,
+      cls: "notebook-desc"
+    });
+
+    const inputDiv = contentEl.createDiv({ cls: "notebook-uuid-input" });
+
+    const urlInput = inputDiv.createEl("input", {
+      type: "text",
+      placeholder: "URL NotebookLM (https://notebooklm.google.com/notebook/...)",
+      cls: "config-input url-input"
+    });
+
+    const buttonsDiv = contentEl.createDiv({ cls: "config-buttons" });
+
+    const skipBtn = buttonsDiv.createEl("button", { text: "Sans NotebookLM", cls: "config-btn" });
+    skipBtn.addEventListener("click", () => {
+      this.resolve(null);
+      this.close();
+    });
+
+    const addBtn = buttonsDiv.createEl("button", { text: "Ajouter", cls: "config-btn config-btn-primary" });
+    addBtn.addEventListener("click", () => {
+      const url = urlInput.value.trim();
+
+      if (!url) {
+        new Notice("Veuillez entrer l'URL du notebook");
+        return;
+      }
+
+      // Validate URL format
+      if (!url.includes("notebooklm.google.com/notebook/")) {
+        new Notice("URL invalide. Format: https://notebooklm.google.com/notebook/...");
+        return;
+      }
+
+      this.resolve(url);
+      this.close();
+    });
+  }
+
+  override onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/**
+ * Modal for notebook registration error with options
+ */
+class NotebookErrorModal extends Modal {
+  private resolve: (value: "retry" | "change" | "skip") => void;
+  private notebookId: string;
+  private errorMessage: string;
+
+  constructor(app: App, notebookId: string, errorMessage: string, resolve: (value: "retry" | "change" | "skip") => void) {
+    super(app);
+    this.notebookId = notebookId;
+    this.errorMessage = errorMessage;
+    this.resolve = resolve;
+  }
+
+  override onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("notebook-error-modal");
+
+    contentEl.createEl("h3", { text: "Erreur notebook" });
+
+    const errorDiv = contentEl.createDiv({ cls: "error-message" });
+    errorDiv.createEl("p", { text: `Notebook "${this.notebookId}" :` });
+    errorDiv.createEl("p", { text: this.errorMessage, cls: "error-text" });
+
+    const infoDiv = contentEl.createDiv({ cls: "error-info" });
+    infoDiv.createEl("p", {
+      text: "Pour donner accès au MCP, partagez le notebook avec le compte Google utilisé par le MCP NotebookLM.",
+      cls: "info-text"
+    });
+
+    const buttonsDiv = contentEl.createDiv({ cls: "config-buttons" });
+
+    const retryBtn = buttonsDiv.createEl("button", { text: "Réessayer", cls: "config-btn config-btn-primary" });
+    retryBtn.addEventListener("click", () => {
+      this.resolve("retry");
+      this.close();
+    });
+
+    const changeBtn = buttonsDiv.createEl("button", { text: "Autre notebook", cls: "config-btn" });
+    changeBtn.addEventListener("click", () => {
+      this.resolve("change");
+      this.close();
+    });
+
+    const skipBtn = buttonsDiv.createEl("button", { text: "Continuer sans", cls: "config-btn" });
+    skipBtn.addEventListener("click", () => {
+      this.resolve("skip");
+      this.close();
+    });
+  }
+
+  override onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/**
+ * Modal for selecting notebook (NotebookLM) and category (style)
+ */
+class PipelineConfigModal extends Modal {
+  private resolve: (value: PipelineConfig | null) => void;
+  private availableCategories: string[];
+  private availableNotebooks: Array<{ id: string; name: string }>;
+  private needsNotebook: boolean;
+  private needsCategorie: boolean;
+
+  private selectedNotebook: string | null = null;
+  private selectedCategorie: string | null = null;
+  private customNotebookInput: HTMLInputElement | null = null;
+  private customCategorieInput: HTMLInputElement | null = null;
+
+  constructor(
+    app: App,
+    resolve: (value: PipelineConfig | null) => void,
+    availableCategories: string[],
+    availableNotebooks: Array<{ id: string; name: string }>,
+    needsNotebook: boolean,
+    needsCategorie: boolean
+  ) {
+    super(app);
+    this.resolve = resolve;
+    this.availableCategories = availableCategories;
+    this.availableNotebooks = availableNotebooks;
+    this.needsNotebook = needsNotebook;
+    this.needsCategorie = needsCategorie;
+  }
+
+  override onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("pipeline-config-modal");
+
+    contentEl.createEl("h3", { text: "Configuration du pipeline" });
+
+    // Notebook selection (if needed)
+    if (this.needsNotebook) {
+      const notebookSection = contentEl.createDiv({ cls: "config-section" });
+      notebookSection.createEl("h4", { text: "Notebook (références NotebookLM)" });
+
+      const notebookSelect = notebookSection.createEl("select", { cls: "config-select" });
+      notebookSelect.createEl("option", { text: "-- Sélectionner --", value: "" });
+
+      for (const nb of this.availableNotebooks) {
+        notebookSelect.createEl("option", { text: nb.name, value: nb.id });
+      }
+      notebookSelect.createEl("option", { text: "── Sans NotebookLM ──", value: "", attr: { disabled: "true" } });
+      notebookSelect.createEl("option", { text: "Regards", value: "_regards" });
+      notebookSelect.createEl("option", { text: "Psycho", value: "_psycho" });
+      notebookSelect.createEl("option", { text: "Autre", value: "_autre" });
+
+      notebookSelect.addEventListener("change", () => {
+        const val = notebookSelect.value;
+        this.selectedNotebook = val.startsWith("_") ? val.slice(1) : val;
+      });
+
+      // Custom notebook input
+      const customNotebookDiv = notebookSection.createDiv({ cls: "config-custom" });
+      customNotebookDiv.createEl("span", { text: "ou nouveau : " });
+      this.customNotebookInput = customNotebookDiv.createEl("input", {
+        type: "text",
+        placeholder: "nom du notebook",
+        cls: "config-input"
+      });
+      this.customNotebookInput.addEventListener("input", () => {
+        if (this.customNotebookInput && this.customNotebookInput.value.trim()) {
+          notebookSelect.value = "";
+          this.selectedNotebook = this.customNotebookInput.value.trim().toLowerCase();
+        }
+      });
+    }
+
+    // Category selection (if needed)
+    if (this.needsCategorie) {
+      const categorieSection = contentEl.createDiv({ cls: "config-section" });
+      categorieSection.createEl("h4", { text: "Catégorie (style d'écriture)" });
+
+      const categorieSelect = categorieSection.createEl("select", { cls: "config-select" });
+      categorieSelect.createEl("option", { text: "-- Sélectionner --", value: "" });
+
+      for (const cat of this.availableCategories) {
+        categorieSelect.createEl("option", { text: cat, value: cat });
+      }
+
+      categorieSelect.addEventListener("change", () => {
+        this.selectedCategorie = categorieSelect.value || null;
+      });
+
+      // Custom category input
+      const customCatDiv = categorieSection.createDiv({ cls: "config-custom" });
+      customCatDiv.createEl("span", { text: "ou nouvelle : " });
+      this.customCategorieInput = customCatDiv.createEl("input", {
+        type: "text",
+        placeholder: "nom de la catégorie",
+        cls: "config-input"
+      });
+      this.customCategorieInput.addEventListener("input", () => {
+        if (this.customCategorieInput && this.customCategorieInput.value.trim()) {
+          categorieSelect.value = "";
+          this.selectedCategorie = this.customCategorieInput.value.trim().toLowerCase();
+        }
+      });
+    }
+
+    // Buttons
+    const buttonsDiv = contentEl.createDiv({ cls: "config-buttons" });
+
+    const cancelBtn = buttonsDiv.createEl("button", { text: "Annuler", cls: "config-btn" });
+    cancelBtn.addEventListener("click", () => {
+      this.resolve(null);
+      this.close();
+    });
+
+    const confirmBtn = buttonsDiv.createEl("button", { text: "Valider", cls: "config-btn config-btn-primary" });
+    confirmBtn.addEventListener("click", () => {
+      // Validate required fields
+      if (this.needsNotebook && !this.selectedNotebook) {
+        new Notice("Veuillez sélectionner un notebook");
+        return;
+      }
+      if (this.needsCategorie && !this.selectedCategorie) {
+        new Notice("Veuillez sélectionner une catégorie");
+        return;
+      }
+      this.close();
+    });
+  }
+
+  override onClose() {
+    // Only resolve if not already resolved (cancel case)
+    if (this.selectedNotebook || this.selectedCategorie) {
+      this.resolve({
+        notebook: this.selectedNotebook,
+        categorie: this.selectedCategorie
+      });
+    }
+    this.contentEl.empty();
   }
 }
 

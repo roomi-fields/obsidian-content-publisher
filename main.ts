@@ -792,15 +792,35 @@ export default class SubstackPublisherPlugin extends Plugin {
         }
       }
 
-      // 6. Create destination folder if needed
-      const folderExists = this.app.vault.getAbstractFileByPath(BROUILLONS_FOLDER);
-      if (!folderExists) {
-        await this.app.vault.createFolder(BROUILLONS_FOLDER);
+      // 6. Extract notebook from updated content for subfolder
+      const updatedFmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      let notebookSubfolder = "";
+      if (updatedFmMatch && updatedFmMatch[1]) {
+        const notebookMatch = updatedFmMatch[1].match(/^notebook:\s*(.+)$/m);
+        if (notebookMatch && notebookMatch[1]) {
+          // Normalize: lowercase, no accents, alphanumeric only
+          notebookSubfolder = notebookMatch[1].trim()
+            .toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9-]/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+        }
       }
 
-      // 7. Build destination path
+      // 7. Create destination folder (with notebook subfolder if available)
+      const destinationFolder = notebookSubfolder
+        ? `${BROUILLONS_FOLDER}/${notebookSubfolder}`
+        : BROUILLONS_FOLDER;
+
+      const folderExists = this.app.vault.getAbstractFileByPath(destinationFolder);
+      if (!folderExists) {
+        await this.app.vault.createFolder(destinationFolder);
+      }
+
+      // 8. Build destination path
       const newFileName = `${basename}_1_brouillon.md`;
-      const destinationPath = `${BROUILLONS_FOLDER}/${newFileName}`;
+      const destinationPath = `${destinationFolder}/${newFileName}`;
 
       // 8. Check if destination already exists
       const existingFile = this.app.vault.getAbstractFileByPath(destinationPath);
@@ -888,7 +908,33 @@ export default class SubstackPublisherPlugin extends Plugin {
     let errorCount = 0;
     const errors: string[] = [];
 
-    new Notice(`Publication de ${mdFiles.length} fichiers...`, 3000);
+    // Create ONE persistent notice with all articles listed
+    const noticeFragment = document.createDocumentFragment();
+    const noticeContainer = document.createElement("div");
+    noticeContainer.style.cssText = "max-height: 400px; overflow-y: auto;";
+
+    // Header
+    const header = document.createElement("div");
+    header.style.cssText = "font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid var(--text-muted); padding-bottom: 4px;";
+    header.textContent = `Publication de ${mdFiles.length} articles ${folder.name}`;
+    noticeContainer.appendChild(header);
+
+    // Create a line for each article
+    const articleLines: Map<string, HTMLSpanElement> = new Map();
+    for (const file of mdFiles) {
+      const line = document.createElement("div");
+      line.style.cssText = "padding: 2px 0;";
+      const statusSpan = document.createElement("span");
+      statusSpan.textContent = `📄 ${file.basename}`;
+      line.appendChild(statusSpan);
+      noticeContainer.appendChild(line);
+      articleLines.set(file.path, statusSpan);
+    }
+
+    noticeFragment.appendChild(noticeContainer);
+
+    // Show the persistent notice (0 = no auto-hide)
+    const batchNotice = new Notice(noticeFragment, 0);
 
     for (let i = 0; i < mdFiles.length; i++) {
       const file = mdFiles[i];
@@ -900,31 +946,41 @@ export default class SubstackPublisherPlugin extends Plugin {
         continue;
       }
 
+      // Update status to show current article is being processed
+      const statusSpan = articleLines.get(file.path);
+      if (statusSpan) {
+        statusSpan.textContent = `📄 ${file.basename} ⏳`;
+      }
+
       try {
         await this.batchPublishSingleFile(file, api, server, imageHandler, wikiLinkConverter);
         publishedPaths.add(file.path);
         successCount++;
+        // Update to checkmark
+        if (statusSpan) {
+          statusSpan.textContent = `📄 ${file.basename} ✓`;
+        }
         this.logger.info(`✓ ${file.basename}`);
       } catch (error) {
         errorCount++;
         const msg = error instanceof Error ? error.message : String(error);
         errors.push(`${file.basename}: ${msg}`);
+        // Update to X
+        if (statusSpan) {
+          statusSpan.textContent = `📄 ${file.basename} ✗`;
+        }
         this.logger.error(`Failed to publish ${file.basename}`, error);
       }
-
-      // Progress notification every 3 files
-      if ((i + 1) % 3 === 0) {
-        new Notice(`Progression: ${i + 1}/${mdFiles.length}`, 2000);
-      }
     }
 
-    // Final summary
-    let summary = `Publication terminée:\n✓ ${successCount} réussi(s)`;
+    // Update header with final summary
+    header.textContent = `✅ Publication terminée: ${successCount} réussi(s)${errorCount > 0 ? `, ${errorCount} erreur(s)` : ""}`;
     if (errorCount > 0) {
-      summary += `\n✗ ${errorCount} erreur(s)`;
       this.logger.warn("Batch errors:", errors);
     }
-    new Notice(summary, 5000);
+
+    // Auto-hide after 5 seconds
+    setTimeout(() => batchNotice.hide(), 5000);
   }
 
   /**
@@ -982,10 +1038,10 @@ export default class SubstackPublisherPlugin extends Plugin {
     // Extract illustration (first image after H1)
     const { illustration, content: htmlWithoutIllustration } = this.extractIllustrationForBatch(html);
 
-    // Build final HTML with enluminure structure if present
+    // Build final HTML - illustration ALWAYS at top, then title
     let finalHtml: string;
     if (imageResult.enluminure?.wordpressUrl) {
-      // Has enluminure - wrap content
+      // Has enluminure - wrap content in enluminure structure
       const enluminureBlock = this.generateEnluminureHtmlForBatch(
         imageResult.enluminure,
         title,
@@ -993,7 +1049,10 @@ export default class SubstackPublisherPlugin extends Plugin {
       );
       finalHtml = illustration ? `${illustration}\n${enluminureBlock}` : enluminureBlock;
     } else {
-      finalHtml = illustration ? `${illustration}\n${htmlWithoutIllustration}` : htmlWithoutIllustration;
+      // No enluminure - still ensure illustration is above title
+      // Wrap content in article-body div for consistent styling
+      const wrappedContent = `<div class="article-body">\n${htmlWithoutIllustration}\n</div>`;
+      finalHtml = illustration ? `${illustration}\n${wrappedContent}` : wrappedContent;
     }
 
     // Get category for articles

@@ -1017,8 +1017,10 @@ ${illustrationImg}
         finalHtml = illustration ? `${illustration}\n${enluminureBlock}` : enluminureBlock;
         this.logger.info("Generated enluminure HTML structure", { hasIllustration: !!illustration });
       } else {
-        // No enluminure - place illustration before content
-        finalHtml = illustration ? `${illustration}\n${htmlWithoutIllustration}` : htmlWithoutIllustration;
+        // No enluminure - still ensure illustration is above title
+        // Wrap content in article-body div for consistent styling
+        const wrappedContent = `<div class="article-body">\n${htmlWithoutIllustration}\n</div>`;
+        finalHtml = illustration ? `${illustration}\n${wrappedContent}` : wrappedContent;
       }
 
       // ===== PAGE PUBLICATION =====
@@ -1369,10 +1371,8 @@ ${illustrationImg}
 
       new Notice(`Article déplacé vers:\n${destinationPath}`);
 
-      // If this was a _6_preprint, delete all other pipeline files (_1 to _5)
-      if (/_6_/i.test(suffixMatch[0])) {
-        await this.cleanupPipelineFiles(orgConfig.sourceFolder, cleanName);
-      }
+      // Note: Pipeline files (_1 to _5) are kept for reference and series articulation
+      // Previously deleted here, but now preserved per user request
     } catch (error) {
       this.logger.error("Failed to move article after publication", error);
       // Don't fail the publication - just warn

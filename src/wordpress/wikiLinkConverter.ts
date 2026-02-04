@@ -71,19 +71,21 @@ export class WikiLinkConverter {
 
   /**
    * Find published URL for a wikilink by looking up the target note's frontmatter
-   * Priority: wordpress_url > wordpress_url_fr > substack_url
    * Uses Obsidian's metadata cache for fast local resolution
+   * @param linkText The link text to resolve
+   * @param lang Optional language code ('fr' or 'en') for bilingual sites
    */
-  findWordPressUrl(linkText: string): string | null {
-    // Check cache first
-    if (this.linkCache.has(linkText)) {
-      return this.linkCache.get(linkText) ?? null;
+  findWordPressUrl(linkText: string, lang?: "fr" | "en"): string | null {
+    // Check cache first (include lang in cache key)
+    const cacheKey = lang ? `${linkText}:${lang}` : linkText;
+    if (this.linkCache.has(cacheKey)) {
+      return this.linkCache.get(cacheKey) ?? null;
     }
 
-    this.logger.debug(`Resolving wikilink locally: ${linkText}`);
+    this.logger.debug(`Resolving wikilink locally: ${linkText} (lang: ${lang || "default"})`);
 
-    // Find the target file in the vault
-    const targetFile = this.findFileByLinkText(linkText);
+    // Find the target file in the vault (prefer _en/ for EN, exclude _en/ for FR)
+    const targetFile = this.findFileByLinkText(linkText, lang);
     if (!targetFile) {
       this.logger.debug(`Target file not found for wikilink: ${linkText}`);
       return null;
@@ -98,19 +100,22 @@ export class WikiLinkConverter {
 
     const fm = cache.frontmatter;
 
-    // Priority 1: WordPress URL (single language or FR for bilingual)
-    const wordpressUrl = fm.wordpress_url || fm.wordpress_url_fr;
+    // Get wordpress_url from the found file
+    // Since we already found the right file for the language (FR file or _en/ file),
+    // we just use its wordpress_url directly
+    const wordpressUrl = fm.wordpress_url || fm.wordpress_url_fr || fm.wordpress_url_en;
+
     if (wordpressUrl && typeof wordpressUrl === "string") {
-      this.logger.debug(`Found wordpress_url for "${linkText}": ${wordpressUrl}`);
-      this.linkCache.set(linkText, wordpressUrl);
+      this.logger.debug(`Found wordpress_url for "${linkText}" (${lang || "default"}): ${wordpressUrl}`);
+      this.linkCache.set(cacheKey, wordpressUrl);
       return wordpressUrl;
     }
 
-    // Priority 2: Substack URL (fallback)
+    // Fallback: Substack URL
     const substackUrl = fm.substack_url;
     if (substackUrl && typeof substackUrl === "string") {
       this.logger.debug(`Found substack_url for "${linkText}": ${substackUrl}`);
-      this.linkCache.set(linkText, substackUrl);
+      this.linkCache.set(cacheKey, substackUrl);
       return substackUrl;
     }
 
@@ -121,28 +126,61 @@ export class WikiLinkConverter {
   /**
    * Find a file in the vault by link text
    * Handles both exact matches and partial paths
+   * @param linkText The link text to find
+   * @param lang Optional language - "en" searches only in _en/, "fr" searches only outside _en/
    */
-  private findFileByLinkText(linkText: string): TFile | null {
-    // Try exact match first (with .md extension)
+  private findFileByLinkText(linkText: string, lang?: "fr" | "en"): TFile | null {
+    const allFiles = this.app.vault.getMarkdownFiles();
+    const linkLower = linkText.toLowerCase();
+
+    // Helper to check if file is in _en/ folder (handles both root and nested)
+    const isInEnFolder = (path: string): boolean => {
+      const p = path.toLowerCase();
+      return p.includes("/_en/") || p.startsWith("_en/");
+    };
+
+    // When language is specified, ONLY search in the appropriate location
+    // NO fallbacks to avoid mixing FR/EN URLs
+    if (lang === "en") {
+      // EN: ONLY search in _en/ folders
+      return allFiles.find(f =>
+        isInEnFolder(f.path) && f.basename.toLowerCase() === linkLower
+      ) || null;
+    }
+
+    if (lang === "fr") {
+      // FR: ONLY search outside _en/ folders
+      return allFiles.find(f =>
+        !isInEnFolder(f.path) && f.basename.toLowerCase() === linkLower
+      ) || null;
+    }
+
+    // No language specified: use original behavior with fallbacks
+    // Try exact path match first
     const exactPath = linkText.endsWith(".md") ? linkText : `${linkText}.md`;
     const exactFile = this.app.vault.getAbstractFileByPath(exactPath);
     if (exactFile instanceof TFile) {
       return exactFile;
     }
 
-    // Search all markdown files for a basename match
-    const allFiles = this.app.vault.getMarkdownFiles();
+    // Basename match (prefer non-_en/ files)
+    const frMatch = allFiles.find(f =>
+      !isInEnFolder(f.path) && f.basename.toLowerCase() === linkLower
+    );
+    if (frMatch) {
+      return frMatch;
+    }
 
-    // Try exact basename match
+    // Any basename match
     const basenameMatch = allFiles.find(
-      f => f.basename.toLowerCase() === linkText.toLowerCase()
+      f => f.basename.toLowerCase() === linkLower
     );
     if (basenameMatch) {
       return basenameMatch;
     }
 
     // Try partial path match (for links like "folder/note")
-    const normalizedLink = linkText.toLowerCase().replace(/\\/g, "/");
+    const normalizedLink = linkLower.replace(/\\/g, "/");
     const pathMatch = allFiles.find(
       f => f.path.toLowerCase().replace(/\.md$/, "").endsWith(normalizedLink)
     );
@@ -180,8 +218,9 @@ export class WikiLinkConverter {
    * Also returns info about unresolved links for potential backlink updates
    * @param markdown The content to process
    * @param outputFormat 'html' for <a href>, 'markdown' for [text](url)
+   * @param lang Optional language code ('fr' or 'en') for bilingual sites
    */
-  processWikiLinks(markdown: string, outputFormat: "html" | "markdown" = "html"): {
+  processWikiLinks(markdown: string, outputFormat: "html" | "markdown" = "html", lang?: "fr" | "en"): {
     processed: string;
     resolved: Array<{ linkText: string; url: string }>;
     unresolved: string[];
@@ -192,14 +231,14 @@ export class WikiLinkConverter {
       return { processed: markdown, resolved: [], unresolved: [] };
     }
 
-    this.logger.info(`Processing ${wikiLinks.length} wikilinks`);
+    this.logger.info(`Processing ${wikiLinks.length} wikilinks (lang: ${lang || "default"})`);
 
     let processedMarkdown = markdown;
     const resolved: Array<{ linkText: string; url: string }> = [];
     const unresolved: string[] = [];
 
     for (const wikiLink of wikiLinks) {
-      const url = this.findWordPressUrl(wikiLink.linkText);
+      const url = this.findWordPressUrl(wikiLink.linkText, lang);
 
       if (url) {
         resolved.push({ linkText: wikiLink.linkText, url });

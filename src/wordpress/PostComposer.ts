@@ -46,6 +46,10 @@ export class WordPressPostComposer extends Modal {
   private bilingualContent: BilingualContent | null = null;
   private isBilingual: boolean = false;
   private rawContent: string = "";
+  // Separate EN file support (_en/ subdirectory)
+  private englishFile: TFile | null = null;
+  private englishFrontmatter: WordPressFrontmatter = {};
+  private hasEnglishVersion: boolean = false;
   // Content type (page or article)
   private contentType: WordPressContentType | null = null;
   private contentTypeSelectEl: HTMLSelectElement | null = null;
@@ -53,6 +57,8 @@ export class WordPressPostComposer extends Modal {
   private existingPageId: number | null = null;
   // Option to update publication date on WordPress
   private updatePublicationDate: boolean = false;
+  // Option to move article after publish
+  private shouldMoveAfterPublish: boolean = false;
 
   constructor(
     app: App,
@@ -130,8 +136,14 @@ export class WordPressPostComposer extends Modal {
     this.activeFile = this.app.workspace.getActiveFile();
     this.loadFrontmatter();
 
-    // Check for bilingual content
+    // Auto-detect server from existing wordpress_url
+    this.detectServerFromUrl();
+
+    // Check for bilingual content (callout format)
     await this.detectBilingualContent();
+
+    // Check for separate EN file in _en/ subdirectory
+    await this.detectEnglishVersion();
 
     // Detect content type and check for existing content
     await this.detectContentTypeAndExisting();
@@ -140,11 +152,32 @@ export class WordPressPostComposer extends Modal {
     let titleText = "Publish to WordPress";
     if (this.isBilingual) {
       titleText = "Publish to WordPress (Bilingual 🇫🇷/🇬🇧)";
+    } else if (this.hasEnglishVersion) {
+      titleText = "Publish to WordPress (FR + EN)";
     }
     if (this.existingPostId || this.existingPageId) {
       titleText = "Update WordPress Content";
     }
     contentEl.createEl("h2", { text: titleText });
+
+    // Show Polylang warnings/info after title
+    if (this.currentServer.polylang?.enabled && !this.isBilingual) {
+      if (this.hasEnglishVersion) {
+        // Info: EN version will be published too
+        const infoDiv = contentEl.createDiv({ cls: "wordpress-info" });
+        infoDiv.createEl("span", {
+          text: "🇬🇧 Version anglaise détectée dans _en/ — sera publiée automatiquement"
+        });
+        infoDiv.style.cssText = "background: #d4edda; color: #155724; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 13px;";
+      } else {
+        // Warning: No EN version
+        const warningDiv = contentEl.createDiv({ cls: "wordpress-warning" });
+        warningDiv.createEl("span", {
+          text: "⚠️ Polylang activé mais pas de version anglaise (_en/" + (this.activeFile?.name || "fichier.md") + ")"
+        });
+        warningDiv.style.cssText = "background: #fff3cd; color: #856404; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 13px;";
+      }
+    }
 
     // Server selector (if multiple servers)
     if (this.servers.length > 1) {
@@ -340,6 +373,28 @@ export class WordPressPostComposer extends Modal {
       });
     }
 
+    // Show "move article after publish" checkbox if articleOrganization is configured
+    if (this.currentServer.articleOrganization?.enabled) {
+      const moveOptionContainer = contentEl.createDiv({
+        cls: "wordpress-move-option"
+      });
+      moveOptionContainer.style.marginTop = "12px";
+      moveOptionContainer.style.display = "flex";
+      moveOptionContainer.style.alignItems = "center";
+      moveOptionContainer.style.gap = "8px";
+      const moveCheckbox = moveOptionContainer.createEl("input", {
+        type: "checkbox",
+        attr: { id: "move-article-checkbox" }
+      });
+      moveOptionContainer.createEl("label", {
+        text: "Déplacer l'article après publication",
+        attr: { for: "move-article-checkbox" }
+      });
+      moveCheckbox.addEventListener("change", () => {
+        this.shouldMoveAfterPublish = moveCheckbox.checked;
+      });
+    }
+
     // Buttons
     const buttonContainer = contentEl.createDiv({
       cls: "wordpress-button-container"
@@ -483,6 +538,61 @@ export class WordPressPostComposer extends Modal {
     }
   }
 
+  /**
+   * Detect if an English version exists in _en/ subdirectory
+   * Example: article.md → _en/article.md
+   */
+  private async detectEnglishVersion(): Promise<void> {
+    if (!this.activeFile || !this.activeFile.parent) {
+      return;
+    }
+
+    const parentPath = this.activeFile.parent.path;
+    const filename = this.activeFile.name;
+    const englishPath = parentPath === "/"
+      ? `_en/${filename}`
+      : `${parentPath}/_en/${filename}`;
+
+    // Check if the EN file exists
+    const englishFile = this.app.vault.getAbstractFileByPath(englishPath);
+
+    if (englishFile instanceof TFile) {
+      this.englishFile = englishFile;
+      this.hasEnglishVersion = true;
+
+      // Load English frontmatter
+      const cache = this.app.metadataCache.getFileCache(englishFile);
+      if (cache?.frontmatter) {
+        const fm = cache.frontmatter;
+        if (typeof fm.title === "string") this.englishFrontmatter.title = fm.title;
+        if (typeof fm.slug === "string") this.englishFrontmatter.slug = fm.slug;
+        if (typeof fm.excerpt === "string") this.englishFrontmatter.excerpt = fm.excerpt;
+        if (typeof fm.focus_keyword === "string") this.englishFrontmatter.focus_keyword = fm.focus_keyword;
+        if (typeof fm.enluminure === "string") this.englishFrontmatter.enluminure = fm.enluminure;
+        if (Array.isArray(fm.tags)) {
+          this.englishFrontmatter.tags = fm.tags.filter((t): t is string => typeof t === "string");
+        }
+        // Accept wordpress_id as number or string (YAML might parse it either way)
+        if (typeof fm.wordpress_id === "number") {
+          this.englishFrontmatter.wordpress_id = fm.wordpress_id;
+        } else if (typeof fm.wordpress_id === "string" && fm.wordpress_id) {
+          const parsed = parseInt(fm.wordpress_id, 10);
+          if (!isNaN(parsed)) this.englishFrontmatter.wordpress_id = parsed;
+        }
+      }
+
+      this.logger.info("Detected English version", {
+        frPath: this.activeFile.path,
+        enPath: englishPath,
+        enTitle: this.englishFrontmatter.title,
+        enWordpressId: this.englishFrontmatter.wordpress_id
+      });
+    } else {
+      this.hasEnglishVersion = false;
+      this.logger.debug("No English version found", { checkedPath: englishPath });
+    }
+  }
+
   private loadFrontmatter(): void {
     if (!this.activeFile) {
       this.logger.debug("loadFrontmatter: No active file");
@@ -564,8 +674,12 @@ export class WordPressPostComposer extends Modal {
         this.logger.debug("Found frontmatter type", { type: fm.type });
       }
       // Parse existing WordPress IDs (for updates)
+      // Accept wordpress_id as number or string (YAML might parse it either way)
       if (typeof fm.wordpress_id === "number") {
         parsed.wordpress_id = fm.wordpress_id;
+      } else if (typeof fm.wordpress_id === "string" && fm.wordpress_id) {
+        const parsedId = parseInt(fm.wordpress_id, 10);
+        if (!isNaN(parsedId)) parsed.wordpress_id = parsedId;
       }
       if (typeof fm.wordpress_url === "string") {
         parsed.wordpress_url = fm.wordpress_url;
@@ -602,6 +716,32 @@ export class WordPressPostComposer extends Modal {
       this.frontmatter.subtitle = h3Heading.heading;
       this.logger.debug("Extracted subtitle from H3", { subtitle: h3Heading.heading });
     }
+  }
+
+  /**
+   * Detect which server was used for previous publication based on wordpress_url
+   * Automatically switches to that server if found
+   */
+  private detectServerFromUrl(): void {
+    const wpUrl = this.frontmatter.wordpress_url;
+    if (!wpUrl || typeof wpUrl !== "string") return;
+
+    // Find server whose baseUrl matches the wordpress_url
+    for (const server of this.servers) {
+      const baseUrl = server.baseUrl.replace(/\/$/, ""); // Remove trailing slash
+      if (wpUrl.startsWith(baseUrl)) {
+        if (server.id !== this.currentServer.id) {
+          this.logger.info("Auto-detected server from wordpress_url", {
+            url: wpUrl,
+            server: server.name
+          });
+          this.switchServer(server);
+        }
+        return;
+      }
+    }
+
+    this.logger.debug("No server matched wordpress_url", { url: wpUrl });
   }
 
   /**
@@ -652,7 +792,9 @@ export class WordPressPostComposer extends Modal {
     cleanContent = imageResult.processedMarkdown;
 
     // Process wikilinks - convert to WordPress internal links
-    const wikiLinkResult = this.wikiLinkConverter.processWikiLinks(cleanContent);
+    // Use "fr" language if Polylang is enabled to resolve to FR URLs
+    const wikiLinkLang = this.currentServer.polylang?.enabled ? "fr" : undefined;
+    const wikiLinkResult = this.wikiLinkConverter.processWikiLinks(cleanContent, "html", wikiLinkLang);
     cleanContent = wikiLinkResult.processed;
 
     if (wikiLinkResult.unresolved.length > 0) {
@@ -729,15 +871,15 @@ ${processedBodyHtml}
     html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
     html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
 
-    // Inline code
-    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-
-    // Code blocks
+    // Code blocks FIRST (before inline code to avoid interference)
     html = html.replace(
-      /```(\w*)\n([\s\S]*?)```/g,
+      /```(\w*)\r?\n([\s\S]*?)```/g,
       (_, lang, code) =>
         `<pre><code class="language-${lang}">${code.trim()}</code></pre>`
     );
+
+    // Inline code (after code blocks)
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
 
     // Images (already processed to WordPress URLs)
     html = html.replace(
@@ -774,9 +916,27 @@ ${processedBodyHtml}
     let inParagraph = false;
     let paragraphContent: string[] = [];
     let consecutiveEmptyLines = 0;
+    let inPreBlock = false;
 
     for (const line of lines) {
       const trimmed = line.trim();
+
+      // Track pre blocks to avoid processing their content
+      if (trimmed.startsWith("<pre") || trimmed.includes("<pre>")) {
+        inPreBlock = true;
+      }
+      if (trimmed.includes("</pre>") || trimmed.startsWith("</pre")) {
+        inPreBlock = false;
+        consecutiveEmptyLines = 0; // Reset after code block
+        result.push(line);
+        continue;
+      }
+
+      // If inside a pre block, just add the line as-is
+      if (inPreBlock) {
+        result.push(line);
+        continue;
+      }
 
       // Check if this is a block element
       const isBlockElement =
@@ -839,7 +999,7 @@ ${processedBodyHtml}
    * Extract and remove the illustration image (first image after title section) from the HTML
    * Returns the illustration HTML and the modified content without it
    */
-  private extractIllustration(html: string): { illustration: string | null; content: string } {
+  private extractIllustration(html: string): { illustration: string | null; illustrationUrl: string | null; content: string } {
     // Strategy: Find the illustration image based on frontmatter or position
     // The illustration can be BEFORE or AFTER H1, but should be near it
     // We exclude enluminure images (which contain "enluminure" in the path)
@@ -847,7 +1007,7 @@ ${processedBodyHtml}
     // First find the H1 (use [\s\S]*? to allow inner tags like <span>)
     const h1Match = html.match(/<h1[^>]*>[\s\S]*?<\/h1>/i);
     if (!h1Match) {
-      return { illustration: null, content: html };
+      return { illustration: null, illustrationUrl: null, content: html };
     }
 
     const h1Start = html.indexOf(h1Match[0]);
@@ -897,6 +1057,10 @@ ${processedBodyHtml}
     }
 
     if (illustrationImg && illustrationPos >= 0) {
+      // Extract URL from img tag
+      const srcMatch = illustrationImg.match(/src="([^"]+)"/);
+      const illustrationUrl = srcMatch?.[1] ?? null;
+
       // Create illustration block
       const illustrationBlock = `<div class="article-illustration">
 ${illustrationImg}
@@ -908,11 +1072,12 @@ ${illustrationImg}
 
       return {
         illustration: illustrationBlock,
+        illustrationUrl,
         content: contentWithoutIllustration
       };
     }
 
-    return { illustration: null, content: html };
+    return { illustration: null, illustrationUrl: null, content: html };
   }
 
   /**
@@ -988,9 +1153,18 @@ ${illustrationImg}
     const buttonText = status === "publish" ? "Publishing..." : "Saving...";
     this.setButtonsDisabled(true, buttonText);
 
-    // Check if this is bilingual content with Polylang enabled
+    // Clear wikilink cache to ensure fresh URL resolution
+    this.wikiLinkConverter.clearCache();
+
+    // Check if this is bilingual content with Polylang enabled (callout format)
     if (this.isBilingual && this.bilingualContent && this.currentServer.polylang?.enabled) {
       await this.saveBilingualToWordPress(status);
+      return;
+    }
+
+    // Check if this has a separate EN file in _en/ subdirectory
+    if (this.hasEnglishVersion && this.englishFile && this.currentServer.polylang?.enabled) {
+      await this.saveWithEnglishFile(status);
       return;
     }
 
@@ -1002,7 +1176,7 @@ ${illustrationImg}
         return;
       }
       // Extract illustration (first image after H1) to place it at the very top
-      const { illustration, content: htmlWithoutIllustration } = this.extractIllustration(contentResult.html);
+      const { illustration, illustrationUrl, content: htmlWithoutIllustration } = this.extractIllustration(contentResult.html);
 
       // Build final HTML content
       let finalHtml: string;
@@ -1069,12 +1243,11 @@ ${illustrationImg}
         rankMathMeta.rank_math_description = this.frontmatter.excerpt;
         hasRankMathMeta = true;
       }
-      // Use enluminure URL and ID for Open Graph image if available
-      if (contentResult.enluminure?.wordpressUrl) {
-        rankMathMeta.rank_math_facebook_image = contentResult.enluminure.wordpressUrl;
-        if (contentResult.enluminure.mediaId) {
-          rankMathMeta.rank_math_facebook_image_id = String(contentResult.enluminure.mediaId);
-        }
+      // Use illustration URL for Open Graph image (social sharing)
+      // Fallback to enluminure if no illustration
+      const ogImageUrl = illustrationUrl || contentResult.enluminure?.wordpressUrl;
+      if (ogImageUrl) {
+        rankMathMeta.rank_math_facebook_image = ogImageUrl;
         rankMathMeta.rank_math_twitter_use_facebook = "on";
         hasRankMathMeta = true;
       }
@@ -1307,6 +1480,12 @@ ${illustrationImg}
   private async moveArticleAfterPublish(): Promise<void> {
     if (!this.activeFile) return;
 
+    // Only move if user checked the option
+    if (!this.shouldMoveAfterPublish) {
+      this.logger.debug("Move after publish not selected, skipping");
+      return;
+    }
+
     const orgConfig = this.currentServer.articleOrganization;
     if (!orgConfig?.enabled) {
       this.logger.debug("Article organization disabled, skipping move");
@@ -1533,16 +1712,28 @@ ${illustrationImg}
     const polylangConfig = this.currentServer.polylang;
 
     try {
-      // Get category IDs for both languages
-      const categoryMapping = polylangConfig.categoryMapping[this.category];
-      if (!categoryMapping) {
+      // Get EN category name from mapping (format: { "articles": "articles-en" })
+      const enCategoryName = polylangConfig.categoryMapping[this.category];
+      if (!enCategoryName) {
         throw new Error(`No Polylang category mapping for: ${this.category}`);
+      }
+
+      // Resolve category IDs
+      const frCategoryId = this.categoryPageIds[this.category];
+      const enCategoryId = this.categoryPageIds[enCategoryName];
+
+      if (frCategoryId === undefined) {
+        throw new Error(`FR category not found: ${this.category}`);
+      }
+      if (enCategoryId === undefined) {
+        throw new Error(`EN category not found: ${enCategoryName}`);
       }
 
       this.logger.info("Starting bilingual publication", {
         category: this.category,
-        frCategoryId: categoryMapping.fr,
-        enCategoryId: categoryMapping.en
+        enCategory: enCategoryName,
+        frCategoryId,
+        enCategoryId
       });
 
       // ===== PUBLISH FR VERSION =====
@@ -1551,6 +1742,9 @@ ${illustrationImg}
       if (!frHtmlResult) {
         throw new Error("Failed to process FR content");
       }
+
+      // Extract illustration URL for SEO (Open Graph image)
+      const { illustrationUrl: frIllustrationUrl } = this.extractIllustration(frHtmlResult.html);
 
       // Resolve FR tags
       let frTagIds: number[] = [];
@@ -1573,12 +1767,14 @@ ${illustrationImg}
       if (frTagIds.length > 0) frSeoOptions.tags = frTagIds;
 
       // Build FR Rank Math meta
-      if (frContent.focus_keyword || frContent.excerpt) {
+      if (frContent.focus_keyword || frContent.excerpt || frIllustrationUrl || frHtmlResult.enluminure?.wordpressUrl) {
         const rankMath: RankMathMeta = {};
         if (frContent.focus_keyword) rankMath.rank_math_focus_keyword = frContent.focus_keyword;
         if (frContent.excerpt) rankMath.rank_math_description = frContent.excerpt;
-        if (frHtmlResult.enluminure?.wordpressUrl) {
-          rankMath.rank_math_facebook_image = frHtmlResult.enluminure.wordpressUrl;
+        // Use illustration URL for Open Graph image (social sharing), fallback to enluminure
+        const frOgImageUrl = frIllustrationUrl || frHtmlResult.enluminure?.wordpressUrl;
+        if (frOgImageUrl) {
+          rankMath.rank_math_facebook_image = frOgImageUrl;
           rankMath.rank_math_twitter_use_facebook = "on";
         }
         frSeoOptions.rankMathMeta = rankMath;
@@ -1588,7 +1784,7 @@ ${illustrationImg}
       const frResult = await this.api.createPost(
         frContent.title,
         frHtmlResult.html,
-        [categoryMapping.fr],
+        [frCategoryId],
         status,
         frSeoOptions
       );
@@ -1607,6 +1803,9 @@ ${illustrationImg}
       if (!enHtmlResult) {
         throw new Error("Failed to process EN content");
       }
+
+      // Extract illustration URL for SEO (Open Graph image)
+      const { illustrationUrl: enIllustrationUrl } = this.extractIllustration(enHtmlResult.html);
 
       // Resolve EN tags
       let enTagIds: number[] = [];
@@ -1633,12 +1832,14 @@ ${illustrationImg}
       if (enTagIds.length > 0) enSeoOptions.tags = enTagIds;
 
       // Build EN Rank Math meta
-      if (enContent.focus_keyword || enContent.excerpt) {
+      if (enContent.focus_keyword || enContent.excerpt || enIllustrationUrl || enHtmlResult.enluminure?.wordpressUrl) {
         const rankMath: RankMathMeta = {};
         if (enContent.focus_keyword) rankMath.rank_math_focus_keyword = enContent.focus_keyword;
         if (enContent.excerpt) rankMath.rank_math_description = enContent.excerpt;
-        if (enHtmlResult.enluminure?.wordpressUrl) {
-          rankMath.rank_math_facebook_image = enHtmlResult.enluminure.wordpressUrl;
+        // Use illustration URL for Open Graph image (social sharing), fallback to enluminure
+        const enOgImageUrl = enIllustrationUrl || enHtmlResult.enluminure?.wordpressUrl;
+        if (enOgImageUrl) {
+          rankMath.rank_math_facebook_image = enOgImageUrl;
           rankMath.rank_math_twitter_use_facebook = "on";
         }
         enSeoOptions.rankMathMeta = rankMath;
@@ -1648,7 +1849,7 @@ ${illustrationImg}
       const enResult = await this.api.createPost(
         enContent.title,
         enHtmlResult.html,
-        [categoryMapping.en],
+        [enCategoryId],
         status,
         enSeoOptions
       );
@@ -1697,7 +1898,7 @@ ${illustrationImg}
    */
   private async processLanguageContent(
     langContent: LanguageContent,
-    _lang: PolylangLanguage
+    lang: PolylangLanguage
   ): Promise<{ html: string; enluminure?: WordPressEnluminureInfo } | null> {
     if (!this.activeFile) return null;
 
@@ -1712,8 +1913,8 @@ ${illustrationImg}
     );
     markdown = imageResult.processedMarkdown;
 
-    // Process wikilinks
-    const wikiLinkResult = this.wikiLinkConverter.processWikiLinks(markdown);
+    // Process wikilinks with language-specific URL resolution
+    const wikiLinkResult = this.wikiLinkConverter.processWikiLinks(markdown, "html", lang);
     markdown = wikiLinkResult.processed;
 
     // Convert to HTML
@@ -1733,6 +1934,319 @@ ${illustrationImg}
       return { html, enluminure: imageResult.enluminure };
     }
     return { html };
+  }
+
+  /**
+   * Publish with separate EN file from _en/ subdirectory
+   * 1. Publish FR version (current file)
+   * 2. Publish EN version (_en/filename.md) with translation link
+   */
+  private async saveWithEnglishFile(status: WordPressPostStatus): Promise<void> {
+    if (!this.activeFile || !this.englishFile || !this.currentServer.polylang) {
+      this.setButtonsDisabled(false);
+      return;
+    }
+
+    const polylangConfig = this.currentServer.polylang;
+    const enCategoryName = polylangConfig.categoryMapping[this.category];
+
+    if (!enCategoryName) {
+      new Notice(`Pas de mapping Polylang pour la catégorie: ${this.category}`);
+      this.setButtonsDisabled(false);
+      return;
+    }
+
+    const enCategoryId = this.categoryPageIds[enCategoryName];
+    if (enCategoryId === undefined) {
+      new Notice(`Catégorie EN non trouvée: ${enCategoryName}`);
+      this.setButtonsDisabled(false);
+      return;
+    }
+
+    const frCategoryId = this.categoryPageIds[this.category];
+    if (frCategoryId === undefined) {
+      new Notice(`Catégorie FR non trouvée: ${this.category}`);
+      this.setButtonsDisabled(false);
+      return;
+    }
+
+    try {
+      this.logger.info("Starting FR+EN publication with separate files", {
+        frFile: this.activeFile.path,
+        enFile: this.englishFile.path,
+        frCategory: this.category,
+        enCategory: enCategoryName
+      });
+
+      // ===== PUBLISH FR VERSION =====
+      const frContentResult = await this.getHtmlContent();
+      if (!frContentResult) {
+        throw new Error("Failed to process FR content");
+      }
+
+      const { illustration: frIllustration, illustrationUrl: frIllustrationUrl, content: frHtmlWithoutIllustration } = this.extractIllustration(frContentResult.html);
+
+      let frFinalHtml: string;
+      if (frContentResult.enluminure?.wordpressUrl) {
+        const enluminureBlock = this.generateEnluminureHtml(
+          frContentResult.enluminure,
+          this.title,
+          frHtmlWithoutIllustration
+        );
+        frFinalHtml = frIllustration ? `${frIllustration}\n${enluminureBlock}` : enluminureBlock;
+      } else {
+        const wrappedContent = `<div class="article-body">\n${frHtmlWithoutIllustration}\n</div>`;
+        frFinalHtml = frIllustration ? `${frIllustration}\n${wrappedContent}` : wrappedContent;
+      }
+
+      // Resolve FR tags
+      let frTagIds: number[] = [];
+      if (this.frontmatter.tags && this.frontmatter.tags.length > 0) {
+        const tagResult = await this.api.resolveTagIds(this.frontmatter.tags);
+        frTagIds = tagResult.ids;
+      }
+
+      // FR SEO options
+      const frSeoOptions: {
+        slug?: string;
+        excerpt?: string;
+        featuredMediaId?: number;
+        rankMathMeta?: RankMathMeta;
+        tags?: number[];
+        lang: PolylangLanguage;
+      } = { lang: "fr" };
+
+      if (this.frontmatter.slug) frSeoOptions.slug = this.frontmatter.slug;
+      if (this.frontmatter.excerpt) frSeoOptions.excerpt = this.frontmatter.excerpt;
+      if (frContentResult.enluminure?.mediaId) frSeoOptions.featuredMediaId = frContentResult.enluminure.mediaId;
+      if (frTagIds.length > 0) frSeoOptions.tags = frTagIds;
+
+      // FR Rank Math
+      if (this.frontmatter.focus_keyword || this.frontmatter.excerpt || frIllustrationUrl || frContentResult.enluminure?.wordpressUrl) {
+        const rankMath: RankMathMeta = {};
+        if (this.frontmatter.focus_keyword) rankMath.rank_math_focus_keyword = this.frontmatter.focus_keyword;
+        if (this.frontmatter.excerpt) rankMath.rank_math_description = this.frontmatter.excerpt;
+        // Use illustration URL for Open Graph image (social sharing), fallback to enluminure
+        const frOgImageUrl = frIllustrationUrl || frContentResult.enluminure?.wordpressUrl;
+        if (frOgImageUrl) {
+          rankMath.rank_math_facebook_image = frOgImageUrl;
+          rankMath.rank_math_twitter_use_facebook = "on";
+        }
+        frSeoOptions.rankMathMeta = rankMath;
+      }
+
+      // Check if FR article already exists
+      const existingFrId = this.frontmatter.wordpress_id;
+      let frResult;
+
+      if (existingFrId) {
+        // Update existing FR article
+        this.logger.info(`Updating existing FR article: ${existingFrId}`);
+        const updatePayload: Partial<import("./types").WordPressPostPayload> = {
+          title: this.title,
+          content: frFinalHtml,
+          status,
+          categories: [frCategoryId],
+          tags: frSeoOptions.tags,
+          slug: frSeoOptions.slug,
+          excerpt: frSeoOptions.excerpt,
+          meta: frSeoOptions.rankMathMeta,
+          lang: "fr"
+        };
+        frResult = await this.api.updatePost(existingFrId, updatePayload);
+      } else {
+        // Create new FR article
+        frResult = await this.api.createPost(
+          this.title,
+          frFinalHtml,
+          [frCategoryId],
+          status,
+          frSeoOptions
+        );
+      }
+
+      if (!frResult.success || !frResult.data) {
+        throw new Error(`Échec publication FR: ${frResult.error}`);
+      }
+
+      const frPostId = frResult.data.id;
+      const frUrl = frResult.data.link;
+      const frAction = existingFrId ? "Updated" : "Created";
+      this.logger.info(`${frAction} FR version: ${frUrl} (ID: ${frPostId})`);
+
+      // ===== PUBLISH EN VERSION =====
+      const enContentRaw = await this.app.vault.cachedRead(this.englishFile);
+      // Remove frontmatter from EN content
+      const enContent = enContentRaw.replace(/^---[\s\S]*?---\n?/, "");
+      const enBasePath = this.englishFile.parent?.path || "";
+
+      // Process EN images
+      const enImageResult = await this.imageHandler.processMarkdownImages(
+        enContent,
+        enBasePath,
+        this.englishFrontmatter.enluminure
+      );
+      let enMarkdown = enImageResult.processedMarkdown;
+
+      // Process EN wikilinks (use "en" to resolve to EN URLs)
+      const enWikiLinkResult = this.wikiLinkConverter.processWikiLinks(enMarkdown, "html", "en");
+      enMarkdown = enWikiLinkResult.processed;
+
+      // Convert to HTML
+      let enHtml = this.markdownToHtml(enMarkdown);
+
+      const { illustration: enIllustration, illustrationUrl: enIllustrationUrl, content: enHtmlWithoutIllustration } = this.extractIllustration(enHtml);
+
+      // Get EN title: frontmatter > filename (without .md) > FR title
+      const enTitle = this.englishFrontmatter.title || this.englishFile.basename || this.title;
+
+      let enFinalHtml: string;
+      if (enImageResult.enluminure?.wordpressUrl) {
+        const enluminureBlock = this.generateEnluminureHtml(
+          enImageResult.enluminure,
+          enTitle,
+          enHtmlWithoutIllustration
+        );
+        enFinalHtml = enIllustration ? `${enIllustration}\n${enluminureBlock}` : enluminureBlock;
+      } else {
+        const wrappedContent = `<div class="article-body">\n${enHtmlWithoutIllustration}\n</div>`;
+        enFinalHtml = enIllustration ? `${enIllustration}\n${wrappedContent}` : wrappedContent;
+      }
+
+      // Resolve EN tags
+      let enTagIds: number[] = [];
+      const enTags = this.englishFrontmatter.tags;
+      if (enTags && enTags.length > 0) {
+        const tagResult = await this.api.resolveTagIds(enTags);
+        enTagIds = tagResult.ids;
+      }
+
+      // EN SEO options with translation link to FR
+      const enSeoOptions: {
+        slug?: string;
+        excerpt?: string;
+        featuredMediaId?: number;
+        rankMathMeta?: RankMathMeta;
+        tags?: number[];
+        lang: PolylangLanguage;
+        translations: Record<string, number>;
+      } = {
+        lang: "en",
+        translations: { fr: frPostId }
+      };
+
+      // Use EN slug from frontmatter, or generate from EN title
+      if (this.englishFrontmatter.slug) {
+        enSeoOptions.slug = this.englishFrontmatter.slug;
+      } else {
+        // Generate slug from EN title (more meaningful than filename which is FR)
+        const slugBase = enTitle
+          .toLowerCase()
+          .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove accents
+          .replace(/[^a-z0-9]+/g, "-") // Replace non-alphanumeric with dash
+          .replace(/^-+|-+$/g, ""); // Trim dashes
+        enSeoOptions.slug = slugBase || (this.frontmatter.slug ? this.frontmatter.slug + "-en" : "article-en");
+      }
+      if (this.englishFrontmatter.excerpt) enSeoOptions.excerpt = this.englishFrontmatter.excerpt;
+      if (enImageResult.enluminure?.mediaId) enSeoOptions.featuredMediaId = enImageResult.enluminure.mediaId;
+      if (enTagIds.length > 0) enSeoOptions.tags = enTagIds;
+
+      // EN Rank Math
+      if (this.englishFrontmatter.focus_keyword || this.englishFrontmatter.excerpt || enIllustrationUrl || enImageResult.enluminure?.wordpressUrl) {
+        const rankMath: RankMathMeta = {};
+        if (this.englishFrontmatter.focus_keyword) rankMath.rank_math_focus_keyword = this.englishFrontmatter.focus_keyword;
+        if (this.englishFrontmatter.excerpt) rankMath.rank_math_description = this.englishFrontmatter.excerpt;
+        // Use illustration URL for Open Graph image (social sharing), fallback to enluminure
+        const enOgImageUrl = enIllustrationUrl || enImageResult.enluminure?.wordpressUrl;
+        if (enOgImageUrl) {
+          rankMath.rank_math_facebook_image = enOgImageUrl;
+          rankMath.rank_math_twitter_use_facebook = "on";
+        }
+        enSeoOptions.rankMathMeta = rankMath;
+      }
+
+      // Check if EN article already exists
+      const existingEnId = this.englishFrontmatter.wordpress_id;
+      let enResult;
+
+      if (existingEnId) {
+        // Update existing EN article
+        this.logger.info(`Updating existing EN article: ${existingEnId}`);
+        const updatePayload: Partial<import("./types").WordPressPostPayload> = {
+          title: enTitle,
+          content: enFinalHtml,
+          status,
+          categories: [enCategoryId],
+          tags: enSeoOptions.tags,
+          slug: enSeoOptions.slug,
+          excerpt: enSeoOptions.excerpt,
+          meta: enSeoOptions.rankMathMeta,
+          lang: "en",
+          translations: { fr: frPostId }
+        };
+        enResult = await this.api.updatePost(existingEnId, updatePayload);
+      } else {
+        // Create new EN article
+        enResult = await this.api.createPost(
+          enTitle,
+          enFinalHtml,
+          [enCategoryId],
+          status,
+          enSeoOptions
+        );
+      }
+
+      if (!enResult.success || !enResult.data) {
+        throw new Error(`Échec publication EN: ${enResult.error}`);
+      }
+
+      const enUrl = enResult.data.link;
+      const enAction = existingEnId ? "Updated" : "Created";
+      this.logger.info(`${enAction} EN version: ${enUrl}`);
+
+      // ===== SUCCESS =====
+      const frActionText = existingFrId ? "Mis à jour" : "Publié";
+      const enActionText = existingEnId ? "mis à jour" : "publié";
+      new Notice(`${frActionText} FR + ${enActionText} EN:\n🇫🇷 ${frUrl}\n🇬🇧 ${enUrl}`);
+
+      // Update FR frontmatter
+      try {
+        await this.app.fileManager.processFrontMatter(this.activeFile, (fm) => {
+          fm.wordpress_url = frUrl;
+          fm.wordpress_id = frPostId;
+        });
+      } catch (error) {
+        this.logger.warn("Failed to update FR frontmatter", error);
+      }
+
+      // Update EN frontmatter
+      try {
+        await this.app.fileManager.processFrontMatter(this.englishFile, (fm) => {
+          fm.wordpress_url = enUrl;
+          fm.wordpress_id = enResult.data?.id;
+        });
+      } catch (error) {
+        this.logger.warn("Failed to update EN frontmatter", error);
+      }
+
+      // Move article to category folder if configured
+      await this.moveArticleAfterPublish();
+
+      this.close();
+    } catch (error) {
+      this.logger.error("Failed to publish FR+EN content", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      new Notice(`Échec publication FR+EN: ${errorMessage}`);
+      this.setButtonsDisabled(false);
+    }
+  }
+
+  /**
+   * Extract title from markdown content (first H1)
+   */
+  private extractTitleFromMarkdown(markdown: string): string | null {
+    const match = markdown.match(/^#\s+(.+)$/m);
+    return match && match[1] ? match[1].trim() : null;
   }
 
   private setButtonsDisabled(disabled: boolean, text?: string) {

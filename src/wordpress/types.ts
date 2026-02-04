@@ -43,7 +43,7 @@ export interface WordPressPostPayload {
   date?: string | undefined;
   // Polylang fields
   lang?: PolylangLanguage | undefined;
-  translations?: Record<PolylangLanguage, number> | undefined;
+  translations?: Partial<Record<PolylangLanguage, number>> | undefined;
 }
 
 // WordPress post response from API (for articles)
@@ -254,12 +254,10 @@ export interface WordPressWikiLink {
   displayText?: string | undefined;
 }
 
-// Polylang category mapping by language
+// Polylang category mapping: FR category name → EN category name
+// Example: { "articles": "articles-en", "news": "news-en" }
 export interface PolylangCategoryMapping {
-  [category: string]: {
-    fr: number;
-    en: number;
-  };
+  [frCategory: string]: string;
 }
 
 // Polylang configuration for a server

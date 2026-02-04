@@ -813,9 +813,13 @@ export default class SubstackPublisherPlugin extends Plugin {
         ? `${BROUILLONS_FOLDER}/${notebookSubfolder}`
         : BROUILLONS_FOLDER;
 
-      const folderExists = this.app.vault.getAbstractFileByPath(destinationFolder);
-      if (!folderExists) {
-        await this.app.vault.createFolder(destinationFolder);
+      try {
+        const folderExists = this.app.vault.getAbstractFileByPath(destinationFolder);
+        if (!folderExists) {
+          await this.app.vault.createFolder(destinationFolder);
+        }
+      } catch {
+        // Folder already exists, that's fine
       }
 
       // 8. Build destination path
@@ -1171,14 +1175,14 @@ export default class SubstackPublisherPlugin extends Plugin {
     html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
     html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
 
-    // Inline code
-    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-
-    // Code blocks
+    // Code blocks FIRST (before inline code to avoid interference)
     html = html.replace(
-      /```(\w*)\n([\s\S]*?)```/g,
+      /```(\w*)\r?\n([\s\S]*?)```/g,
       (_, lang, code) => `<pre><code class="language-${lang}">${code.trim()}</code></pre>`
     );
+
+    // Inline code (after code blocks)
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
 
     // Images (already processed to WordPress URLs)
     html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
@@ -1201,14 +1205,32 @@ export default class SubstackPublisherPlugin extends Plugin {
     html = html.replace(/^---+$/gm, "<hr>");
     html = html.replace(/^\*\*\*+$/gm, "<hr>");
 
-    // Paragraphs
+    // Paragraphs - wrap text blocks in <p> tags
     const lines = html.split("\n");
     const result: string[] = [];
     let inParagraph = false;
     let paragraphContent: string[] = [];
+    let inPreBlock = false;
 
     for (const line of lines) {
       const trimmed = line.trim();
+
+      // Track pre blocks to avoid processing their content
+      if (trimmed.startsWith("<pre") || trimmed.includes("<pre>")) {
+        inPreBlock = true;
+      }
+      if (trimmed.includes("</pre>") || trimmed.startsWith("</pre")) {
+        inPreBlock = false;
+        result.push(line);
+        continue;
+      }
+
+      // If inside a pre block, just add the line as-is
+      if (inPreBlock) {
+        result.push(line);
+        continue;
+      }
+
       const isBlockElement =
         trimmed.startsWith("<h") ||
         trimmed.startsWith("<ul") ||

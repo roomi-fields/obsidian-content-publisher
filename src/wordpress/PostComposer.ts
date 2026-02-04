@@ -166,6 +166,7 @@ export class WordPressPostComposer extends Modal {
         // Info: EN version will be published too
         const infoDiv = contentEl.createDiv({ cls: "wordpress-info" });
         infoDiv.createEl("span", {
+          // eslint-disable-next-line obsidianmd/ui/sentence-case
           text: "🇬🇧 Version anglaise détectée dans _en/ — sera publiée automatiquement"
         });
         infoDiv.style.cssText = "background: #d4edda; color: #155724; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 13px;";
@@ -173,7 +174,7 @@ export class WordPressPostComposer extends Modal {
         // Warning: No EN version
         const warningDiv = contentEl.createDiv({ cls: "wordpress-warning" });
         warningDiv.createEl("span", {
-          text: "⚠️ Polylang activé mais pas de version anglaise (_en/" + (this.activeFile?.name || "fichier.md") + ")"
+          text: `⚠️ Polylang activé mais pas de version anglaise (_en/${this.activeFile?.name || "fichier.md"})`
         });
         warningDiv.style.cssText = "background: #fff3cd; color: #856404; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 13px;";
       }
@@ -2093,7 +2094,7 @@ ${illustrationImg}
       enMarkdown = enWikiLinkResult.processed;
 
       // Convert to HTML
-      let enHtml = this.markdownToHtml(enMarkdown);
+      const enHtml = this.markdownToHtml(enMarkdown);
 
       const { illustration: enIllustration, illustrationUrl: enIllustrationUrl, content: enHtmlWithoutIllustration } = this.extractIllustration(enHtml);
 
@@ -2145,7 +2146,7 @@ ${illustrationImg}
           .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove accents
           .replace(/[^a-z0-9]+/g, "-") // Replace non-alphanumeric with dash
           .replace(/^-+|-+$/g, ""); // Trim dashes
-        enSeoOptions.slug = slugBase || (this.frontmatter.slug ? this.frontmatter.slug + "-en" : "article-en");
+        enSeoOptions.slug = slugBase || (this.frontmatter.slug ? `${this.frontmatter.slug}-en` : "article-en");
       }
       if (this.englishFrontmatter.excerpt) enSeoOptions.excerpt = this.englishFrontmatter.excerpt;
       if (enImageResult.enluminure?.mediaId) enSeoOptions.featuredMediaId = enImageResult.enluminure.mediaId;

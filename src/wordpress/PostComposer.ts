@@ -19,6 +19,7 @@ import {
   isBilingualContent,
   parseBilingualContent
 } from "./bilingualParser";
+import { convertMarkdownToHtml } from "./markdownConverter";
 
 export interface WordPressPostComposerOptions {
   servers: WordPressServer[];
@@ -135,6 +136,11 @@ export class WordPressPostComposer extends Modal {
     // Get active file and read frontmatter
     this.activeFile = this.app.workspace.getActiveFile();
     this.loadFrontmatter();
+
+    // Set wikilink search scope to the current site directory
+    if (this.activeFile) {
+      this.wikiLinkConverter.setBasePath(this.activeFile.path);
+    }
 
     // Auto-detect server from existing wordpress_url
     this.detectServerFromUrl();
@@ -802,8 +808,8 @@ export class WordPressPostComposer extends Modal {
       this.logger.warn(`Unresolved wikilinks: ${wikiLinkResult.unresolved.join(", ")}`);
     }
 
-    // Convert markdown to HTML
-    const html = this.markdownToHtml(cleanContent);
+    // Convert markdown to HTML (mermaid, LaTeX, tables, etc. handled internally)
+    const html = convertMarkdownToHtml(cleanContent);
 
     return {
       html,
@@ -843,157 +849,6 @@ export class WordPressPostComposer extends Modal {
 </div>
 ${processedBodyHtml}
 </div>`;
-  }
-
-  /**
-   * Simple markdown to HTML conversion
-   * WordPress handles markdown rendering, but we need basic HTML for the REST API
-   */
-  private markdownToHtml(markdown: string): string {
-    let html = markdown;
-
-    // Remove dataviewjs and dataview code blocks entirely
-    html = html.replace(/```dataviewjs[\s\S]*?```/g, "");
-    html = html.replace(/```dataview[\s\S]*?```/g, "");
-
-    // Convert markdown tables to HTML tables
-    html = this.convertTablesToHtml(html);
-
-    // Headers
-    html = html.replace(/^######\s+(.+)$/gm, "<h6>$1</h6>");
-    html = html.replace(/^#####\s+(.+)$/gm, "<h5>$1</h5>");
-    html = html.replace(/^####\s+(.+)$/gm, "<h4>$1</h4>");
-    html = html.replace(/^###\s+(.+)$/gm, "<h3>$1</h3>");
-    html = html.replace(/^##\s+(.+)$/gm, "<h2>$1</h2>");
-    html = html.replace(/^#\s+(.+)$/gm, "<h1>$1</h1>");
-
-    // Bold and italic
-    html = html.replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>");
-    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
-
-    // Code blocks FIRST (before inline code to avoid interference)
-    html = html.replace(
-      /```(\w*)\r?\n([\s\S]*?)```/g,
-      (_, lang, code) =>
-        `<pre><code class="language-${lang}">${code.trim()}</code></pre>`
-    );
-
-    // Inline code (after code blocks)
-    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-
-    // Images (already processed to WordPress URLs)
-    html = html.replace(
-      /!\[([^\]]*)\]\(([^)]+)\)/g,
-      '<img src="$2" alt="$1">'
-    );
-
-    // Links (including converted wikilinks which are now <a> tags)
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
-
-    // Blockquotes
-    html = html.replace(/^>\s+(.+)$/gm, "<blockquote>$1</blockquote>");
-    // Merge consecutive blockquotes
-    html = html.replace(/<\/blockquote>\n<blockquote>/g, "\n");
-
-    // Unordered lists
-    html = html.replace(/^[*-]\s+(.+)$/gm, "<li>$1</li>");
-    html = html.replace(
-      /(<li>.*<\/li>\n?)+/g,
-      (match) => `<ul>\n${match}</ul>\n`
-    );
-
-    // Ordered lists
-    html = html.replace(/^\d+\.\s+(.+)$/gm, "<li>$1</li>");
-
-    // Horizontal rules
-    html = html.replace(/^---+$/gm, "<hr>");
-    html = html.replace(/^\*\*\*+$/gm, "<hr>");
-    html = html.replace(/^___+$/gm, "<hr>");
-
-    // Paragraphs - wrap text blocks in <p> tags
-    const lines = html.split("\n");
-    const result: string[] = [];
-    let inParagraph = false;
-    let paragraphContent: string[] = [];
-    let consecutiveEmptyLines = 0;
-    let inPreBlock = false;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-
-      // Track pre blocks to avoid processing their content
-      if (trimmed.startsWith("<pre") || trimmed.includes("<pre>")) {
-        inPreBlock = true;
-      }
-      if (trimmed.includes("</pre>") || trimmed.startsWith("</pre")) {
-        inPreBlock = false;
-        consecutiveEmptyLines = 0; // Reset after code block
-        result.push(line);
-        continue;
-      }
-
-      // If inside a pre block, just add the line as-is
-      if (inPreBlock) {
-        result.push(line);
-        continue;
-      }
-
-      // Check if this is a block element
-      const isBlockElement =
-        trimmed.startsWith("<h") ||
-        trimmed.startsWith("<ul") ||
-        trimmed.startsWith("<ol") ||
-        trimmed.startsWith("<li") ||
-        trimmed.startsWith("</ul") ||
-        trimmed.startsWith("</ol") ||
-        trimmed.startsWith("<blockquote") ||
-        trimmed.startsWith("</blockquote") ||
-        trimmed.startsWith("<pre") ||
-        trimmed.startsWith("</pre") ||
-        trimmed.startsWith("<hr") ||
-        trimmed.startsWith("<img") ||
-        trimmed === "";
-
-      if (trimmed === "") {
-        consecutiveEmptyLines++;
-        // Close any open paragraph on first empty line
-        if (inParagraph && paragraphContent.length > 0) {
-          result.push(`<p>${paragraphContent.join("<br>")}</p>`);
-          paragraphContent = [];
-          inParagraph = false;
-        }
-        // Add extra line break for double+ empty lines
-        if (consecutiveEmptyLines >= 2) {
-          result.push("<p>&nbsp;</p>");
-        }
-      } else if (isBlockElement) {
-        consecutiveEmptyLines = 0;
-        // Close any open paragraph
-        if (inParagraph && paragraphContent.length > 0) {
-          result.push(`<p>${paragraphContent.join("<br>")}</p>`);
-          paragraphContent = [];
-          inParagraph = false;
-        }
-        result.push(line);
-      } else {
-        consecutiveEmptyLines = 0;
-        // Regular text line
-        inParagraph = true;
-        paragraphContent.push(trimmed);
-      }
-    }
-
-    // Close final paragraph if needed
-    if (inParagraph && paragraphContent.length > 0) {
-      result.push(`<p>${paragraphContent.join("<br>")}</p>`);
-    }
-
-    // Remove leading empty paragraphs (ensure H1 comes first)
-    let finalHtml = result.join("\n");
-    finalHtml = finalHtml.replace(/^(\s*<p>&nbsp;<\/p>\s*)+/, "");
-
-    return finalHtml;
   }
 
   /**
@@ -1079,58 +934,6 @@ ${illustrationImg}
     }
 
     return { illustration: null, illustrationUrl: null, content: html };
-  }
-
-  /**
-   * Convert markdown tables to HTML tables
-   */
-  private convertTablesToHtml(text: string): string {
-    // Match markdown tables (header row, separator row, data rows)
-    const tableRegex = /\|(.+)\|\n\|[-:\s|]+\|\n((?:\|.+\|\n?)+)/g;
-
-    return text.replace(tableRegex, (match) => {
-      const lines = match.trim().split("\n");
-      if (lines.length < 3) return match;
-
-      // Parse header row
-      const headerLine = lines[0] ?? "";
-      const headers = headerLine
-        .split("|")
-        .map((h) => h.trim())
-        .filter((h) => h);
-
-      // Skip separator row (index 1), parse data rows
-      const rows: string[][] = [];
-      for (let i = 2; i < lines.length; i++) {
-        const rowLine = lines[i] ?? "";
-        const cells = rowLine
-          .split("|")
-          .map((c) => c.trim())
-          .filter((c) => c);
-        if (cells.length > 0) {
-          rows.push(cells);
-        }
-      }
-
-      // Build HTML table (styling handled by WordPress theme)
-      let html = "<table>\n<thead>\n<tr>\n";
-      for (const header of headers) {
-        html += `<th>${header}</th>\n`;
-      }
-      html += "</tr>\n</thead>\n<tbody>\n";
-
-      for (const row of rows) {
-        html += "<tr>\n";
-        for (let i = 0; i < headers.length; i++) {
-          const cell = row[i] ?? "";
-          html += `<td>${cell}</td>\n`;
-        }
-        html += "</tr>\n";
-      }
-
-      html += "</tbody>\n</table>\n";
-      return html;
-    });
   }
 
   private async saveToWordPress(status: WordPressPostStatus): Promise<void> {
@@ -1303,7 +1106,10 @@ ${illustrationImg}
         };
         // Add current date if user wants to update publication date
         if (this.updatePublicationDate) {
-          updatePayload.date = new Date().toISOString();
+          const now = new Date().toISOString();
+          updatePayload.date = now;
+          updatePayload.date_gmt = now;
+          this.logger.info(`Updating publication date to: ${now}`);
         }
         result = await this.api.updatePost(existingId, updatePayload);
       } else {
@@ -1386,7 +1192,10 @@ ${illustrationImg}
         };
         // Add current date if user wants to update publication date
         if (this.updatePublicationDate) {
-          updatePayload.date = new Date().toISOString();
+          const now = new Date().toISOString();
+          updatePayload.date = now;
+          updatePayload.date_gmt = now;
+          this.logger.info(`Updating page publication date to: ${now}`);
         }
         result = await this.api.updatePage(existingId, updatePayload);
       } else {
@@ -1666,7 +1475,7 @@ ${illustrationImg}
     cleanContent = wikiLinkResult.processed;
 
     // Convert to HTML
-    let finalHtml = this.markdownToHtml(cleanContent);
+    let finalHtml = convertMarkdownToHtml(cleanContent);
 
     // Handle enluminure if present
     if (imageResult.enluminure?.wordpressUrl) {
@@ -1918,8 +1727,8 @@ ${illustrationImg}
     const wikiLinkResult = this.wikiLinkConverter.processWikiLinks(markdown, "html", lang);
     markdown = wikiLinkResult.processed;
 
-    // Convert to HTML
-    const html = this.markdownToHtml(markdown);
+    // Convert to HTML (mermaid, LaTeX, tables, etc. handled internally)
+    const html = convertMarkdownToHtml(markdown);
 
     // If there's an enluminure, wrap with enluminure HTML
     if (imageResult.enluminure?.wordpressUrl) {
@@ -2054,6 +1863,13 @@ ${illustrationImg}
           meta: frSeoOptions.rankMathMeta,
           lang: "fr"
         };
+        // Add current date if user wants to update publication date
+        if (this.updatePublicationDate) {
+          const now = new Date().toISOString();
+          updatePayload.date = now;
+          updatePayload.date_gmt = now;
+          this.logger.info(`Updating FR publication date to: ${now}`);
+        }
         frResult = await this.api.updatePost(existingFrId, updatePayload);
       } else {
         // Create new FR article
@@ -2093,8 +1909,8 @@ ${illustrationImg}
       const enWikiLinkResult = this.wikiLinkConverter.processWikiLinks(enMarkdown, "html", "en");
       enMarkdown = enWikiLinkResult.processed;
 
-      // Convert to HTML
-      const enHtml = this.markdownToHtml(enMarkdown);
+      // Convert to HTML (mermaid, LaTeX, tables, etc. handled internally)
+      const enHtml = convertMarkdownToHtml(enMarkdown);
 
       const { illustration: enIllustration, illustrationUrl: enIllustrationUrl, content: enHtmlWithoutIllustration } = this.extractIllustration(enHtml);
 
@@ -2185,6 +2001,13 @@ ${illustrationImg}
           lang: "en",
           translations: { fr: frPostId }
         };
+        // Add current date if user wants to update publication date
+        if (this.updatePublicationDate) {
+          const now = new Date().toISOString();
+          updatePayload.date = now;
+          updatePayload.date_gmt = now;
+          this.logger.info(`Updating EN publication date to: ${now}`);
+        }
         enResult = await this.api.updatePost(existingEnId, updatePayload);
       } else {
         // Create new EN article

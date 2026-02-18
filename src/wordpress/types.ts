@@ -39,8 +39,9 @@ export interface WordPressPostPayload {
   excerpt?: string | undefined;
   featured_media?: number | undefined;
   meta?: RankMathMeta | undefined;
-  // Date field (ISO 8601 format) - used to update publication date
+  // Date fields (ISO 8601 format) - used to update publication date
   date?: string | undefined;
+  date_gmt?: string | undefined;
   // Polylang fields
   lang?: PolylangLanguage | undefined;
   translations?: Partial<Record<PolylangLanguage, number>> | undefined;
@@ -85,8 +86,9 @@ export interface WordPressPagePayload {
   slug?: string | undefined;
   excerpt?: string | undefined;
   featured_media?: number | undefined;
-  // Date field (ISO 8601 format) - used to update publication date
+  // Date fields (ISO 8601 format) - used to update publication date
   date?: string | undefined;
+  date_gmt?: string | undefined;
 }
 
 // WordPress page response from API

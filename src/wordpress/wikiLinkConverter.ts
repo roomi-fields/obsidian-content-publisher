@@ -10,6 +10,7 @@ export class WikiLinkConverter {
   private app: App;
   private logger: ILogger;
   private linkCache: Map<string, string>;
+  private basePath = "";
 
   constructor(
     app: App,
@@ -18,6 +19,16 @@ export class WikiLinkConverter {
     this.app = app;
     this.logger = logger;
     this.linkCache = new Map();
+  }
+
+  /** Set the publication base directory (limits file search scope to the site root) */
+  setBasePath(filePath: string): void {
+    // Go up to the site root: file.md → Articles/ → roomi-fields.com/
+    const parts = filePath.split("/");
+    parts.pop(); // remove filename
+    parts.pop(); // remove Articles/
+    this.basePath = parts.join("/");
+    this.logger.debug(`WikiLink search scope: ${this.basePath}`);
   }
 
   /**
@@ -84,39 +95,34 @@ export class WikiLinkConverter {
 
     this.logger.debug(`Resolving wikilink locally: ${linkText} (lang: ${lang || "default"})`);
 
-    // Find the target file in the vault (prefer _en/ for EN, exclude _en/ for FR)
-    const targetFile = this.findFileByLinkText(linkText, lang);
-    if (!targetFile) {
+    // Find ALL matching files (multiple files may share the same basename)
+    const candidates = this.findAllFilesByLinkText(linkText, lang);
+    if (candidates.length === 0) {
       this.logger.debug(`Target file not found for wikilink: ${linkText}`);
       return null;
     }
 
-    // Get frontmatter from metadata cache
-    const cache = this.app.metadataCache.getFileCache(targetFile);
-    if (!cache?.frontmatter) {
-      this.logger.debug(`No frontmatter for: ${targetFile.path}`);
-      return null;
-    }
+    // Try each candidate until one has a published URL
+    for (const targetFile of candidates) {
+      const cache = this.app.metadataCache.getFileCache(targetFile);
+      if (!cache?.frontmatter) continue;
 
-    const fm = cache.frontmatter;
+      const fm = cache.frontmatter;
+      const wordpressUrl = fm.wordpress_url || fm.wordpress_url_fr || fm.wordpress_url_en;
 
-    // Get wordpress_url from the found file
-    // Since we already found the right file for the language (FR file or _en/ file),
-    // we just use its wordpress_url directly
-    const wordpressUrl = fm.wordpress_url || fm.wordpress_url_fr || fm.wordpress_url_en;
+      if (wordpressUrl && typeof wordpressUrl === "string") {
+        this.logger.debug(`Found wordpress_url for "${linkText}" (${lang || "default"}): ${wordpressUrl}`);
+        this.linkCache.set(cacheKey, wordpressUrl);
+        return wordpressUrl;
+      }
 
-    if (wordpressUrl && typeof wordpressUrl === "string") {
-      this.logger.debug(`Found wordpress_url for "${linkText}" (${lang || "default"}): ${wordpressUrl}`);
-      this.linkCache.set(cacheKey, wordpressUrl);
-      return wordpressUrl;
-    }
-
-    // Fallback: Substack URL
-    const substackUrl = fm.substack_url;
-    if (substackUrl && typeof substackUrl === "string") {
-      this.logger.debug(`Found substack_url for "${linkText}": ${substackUrl}`);
-      this.linkCache.set(cacheKey, substackUrl);
-      return substackUrl;
+      // Fallback: Substack URL
+      const substackUrl = fm.substack_url;
+      if (substackUrl && typeof substackUrl === "string") {
+        this.logger.debug(`Found substack_url for "${linkText}": ${substackUrl}`);
+        this.linkCache.set(cacheKey, substackUrl);
+        return substackUrl;
+      }
     }
 
     this.logger.debug(`No published URL in frontmatter for: ${linkText}`);
@@ -129,8 +135,11 @@ export class WikiLinkConverter {
    * @param linkText The link text to find
    * @param lang Optional language - "en" searches only in _en/, "fr" searches only outside _en/
    */
-  private findFileByLinkText(linkText: string, lang?: "fr" | "en"): TFile | null {
-    const allFiles = this.app.vault.getMarkdownFiles();
+  private findAllFilesByLinkText(linkText: string, lang?: "fr" | "en"): TFile[] {
+    // Limit search to publication directory if set
+    const allFiles = this.app.vault.getMarkdownFiles().filter(
+      f => !this.basePath || f.path.startsWith(this.basePath)
+    );
     const linkLower = linkText.toLowerCase();
 
     // Helper to check if file is in _en/ folder (handles both root and nested)
@@ -139,56 +148,42 @@ export class WikiLinkConverter {
       return p.includes("/_en/") || p.startsWith("_en/");
     };
 
-    // When language is specified, ONLY search in the appropriate location
-    // NO fallbacks to avoid mixing FR/EN URLs
     if (lang === "en") {
-      // EN: ONLY search in _en/ folders
-      return allFiles.find(f =>
+      return allFiles.filter(f =>
         isInEnFolder(f.path) && f.basename.toLowerCase() === linkLower
-      ) || null;
+      );
     }
 
     if (lang === "fr") {
-      // FR: ONLY search outside _en/ folders
-      return allFiles.find(f =>
+      return allFiles.filter(f =>
         !isInEnFolder(f.path) && f.basename.toLowerCase() === linkLower
-      ) || null;
+      );
     }
 
-    // No language specified: use original behavior with fallbacks
-    // Try exact path match first
+    // No language specified: try exact path, then all basename matches
     const exactPath = linkText.endsWith(".md") ? linkText : `${linkText}.md`;
     const exactFile = this.app.vault.getAbstractFileByPath(exactPath);
     if (exactFile instanceof TFile) {
-      return exactFile;
+      return [exactFile];
     }
 
-    // Basename match (prefer non-_en/ files)
-    const frMatch = allFiles.find(f =>
+    // All basename matches, preferring non-_en/ files first
+    const frFiles = allFiles.filter(f =>
       !isInEnFolder(f.path) && f.basename.toLowerCase() === linkLower
     );
-    if (frMatch) {
-      return frMatch;
-    }
-
-    // Any basename match
-    const basenameMatch = allFiles.find(
-      f => f.basename.toLowerCase() === linkLower
+    const enFiles = allFiles.filter(f =>
+      isInEnFolder(f.path) && f.basename.toLowerCase() === linkLower
     );
-    if (basenameMatch) {
-      return basenameMatch;
+
+    if (frFiles.length > 0 || enFiles.length > 0) {
+      return [...frFiles, ...enFiles];
     }
 
-    // Try partial path match (for links like "folder/note")
+    // Try partial path match
     const normalizedLink = linkLower.replace(/\\/g, "/");
-    const pathMatch = allFiles.find(
+    return allFiles.filter(
       f => f.path.toLowerCase().replace(/\.md$/, "").endsWith(normalizedLink)
     );
-    if (pathMatch) {
-      return pathMatch;
-    }
-
-    return null;
   }
 
   /**

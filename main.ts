@@ -19,6 +19,7 @@ import { WordPressPostComposer } from "./src/wordpress/PostComposer";
 import { WordPressCategoryMapping, WordPressServer, PolylangConfig, PolylangCategoryMapping, WordPressEnluminureInfo, RankMathMeta } from "./src/wordpress/types";
 import { WordPressImageHandler } from "./src/wordpress/imageHandler";
 import { WikiLinkConverter } from "./src/wordpress/wikiLinkConverter";
+import { convertMarkdownToHtml } from "./src/wordpress/markdownConverter";
 import { LinkedInAPI } from "./src/linkedin/api";
 import { LinkedInPostComposer } from "./src/linkedin/PostComposer";
 import { LinkedInVisibility } from "./src/linkedin/types";
@@ -176,6 +177,14 @@ export default class SubstackPublisherPlugin extends Plugin {
       name: "Publish to LinkedIn",
       callback: () => {
         this.publishToLinkedIn();
+      },
+    });
+
+    this.addCommand({
+      id: "republish-all-articles",
+      name: "Republier tous les articles du blog",
+      callback: () => {
+        this.republishAllArticles();
       },
     });
 
@@ -969,11 +978,9 @@ export default class SubstackPublisherPlugin extends Plugin {
         errorCount++;
         const msg = error instanceof Error ? error.message : String(error);
         errors.push(`${file.basename}: ${msg}`);
-        // Update to X
         if (statusSpan) {
-          statusSpan.textContent = `📄 ${file.basename} ✗`;
+          statusSpan.textContent = `📄 ${file.basename} ✗ ${msg.substring(0, 80)}`;
         }
-        this.logger.error(`Failed to publish ${file.basename}`, error);
       }
     }
 
@@ -981,6 +988,137 @@ export default class SubstackPublisherPlugin extends Plugin {
     header.textContent = `✅ Publication terminée: ${successCount} réussi(s)${errorCount > 0 ? `, ${errorCount} erreur(s)` : ""}`;
     if (errorCount > 0) {
       this.logger.warn("Batch errors:", errors);
+    }
+
+    // Auto-hide after 5 seconds
+    setTimeout(() => batchNotice.hide(), 5000);
+  }
+
+  /**
+   * Republish all articles already published on the default WordPress blog.
+   * Scans the entire vault for files with wordpress_id matching the default server's baseUrl.
+   */
+  private async republishAllArticles(): Promise<void> {
+    if (!this.settings.wordpressEnabled || this.settings.wordpressServers.length === 0) {
+      new Notice("WordPress n'est pas configuré");
+      return;
+    }
+
+    const server = this.settings.wordpressServers.find(s => s.id === this.settings.wordpressDefaultServerId)
+      ?? this.settings.wordpressServers[0];
+
+    if (!server) {
+      new Notice("Aucun serveur WordPress configuré");
+      return;
+    }
+
+    // Scan the entire vault recursively for .md files with wordpress_id
+    const allFiles = this.app.vault.getMarkdownFiles();
+    const matchingFiles: TFile[] = [];
+
+    for (const file of allFiles) {
+      // Exclude files in _en/ directories (handled via bilingual mechanism from FR parent)
+      if (file.path.includes("/_en/")) continue;
+
+      const cache = this.app.metadataCache.getFileCache(file);
+      if (!cache?.frontmatter) continue;
+
+      const fm = cache.frontmatter;
+      if (!fm.wordpress_id) continue;
+
+      // If wordpress_url exists, match it against the server's baseUrl
+      if (fm.wordpress_url) {
+        const wpUrl = String(fm.wordpress_url);
+        const serverHost = new URL(server.baseUrl).hostname;
+        try {
+          const articleHost = new URL(wpUrl).hostname;
+          if (articleHost !== serverHost) continue;
+        } catch {
+          continue;
+        }
+      }
+
+      matchingFiles.push(file);
+    }
+
+    if (matchingFiles.length === 0) {
+      new Notice("Aucun article publié trouvé dans le vault");
+      return;
+    }
+
+    // Sort by name for consistent ordering
+    matchingFiles.sort((a, b) => a.basename.localeCompare(b.basename));
+
+    // Show confirmation modal
+    const confirmed = await new Promise<boolean>((resolve) => {
+      new BatchPublishConfirmModal(this.app, `blog ${server.name}`, matchingFiles.length, resolve).open();
+    });
+
+    if (!confirmed) {
+      new Notice("Republication annulée");
+      return;
+    }
+
+    // Initialize handlers (same as batchPublishFolder)
+    const api = new WordPressAPI(server.baseUrl, server.username, server.password);
+    const imageHandler = new WordPressImageHandler(api, this.app.vault, this.logger);
+    const wikiLinkConverter = new WikiLinkConverter(this.app, this.logger);
+
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: string[] = [];
+
+    // Create ONE persistent notice with all articles listed
+    const noticeFragment = document.createDocumentFragment();
+    const noticeContainer = document.createElement("div");
+    noticeContainer.style.cssText = "max-height: 400px; overflow-y: auto;";
+
+    const header = document.createElement("div");
+    header.style.cssText = "font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid var(--text-muted); padding-bottom: 4px;";
+    header.textContent = `Republication de ${matchingFiles.length} articles — ${server.name}`;
+    noticeContainer.appendChild(header);
+
+    const articleLines: Map<string, HTMLSpanElement> = new Map();
+    for (const file of matchingFiles) {
+      const line = document.createElement("div");
+      line.style.cssText = "padding: 2px 0;";
+      const statusSpan = document.createElement("span");
+      statusSpan.textContent = `📄 ${file.basename}`;
+      line.appendChild(statusSpan);
+      noticeContainer.appendChild(line);
+      articleLines.set(file.path, statusSpan);
+    }
+
+    noticeFragment.appendChild(noticeContainer);
+    const batchNotice = new Notice(noticeFragment, 0);
+
+    for (const file of matchingFiles) {
+      const statusSpan = articleLines.get(file.path);
+      if (statusSpan) {
+        statusSpan.textContent = `📄 ${file.basename} ⏳`;
+      }
+
+      try {
+        await this.batchPublishSingleFile(file, api, server, imageHandler, wikiLinkConverter);
+        successCount++;
+        if (statusSpan) {
+          statusSpan.textContent = `📄 ${file.basename} ✓`;
+        }
+        this.logger.info(`✓ ${file.basename}`);
+      } catch (error) {
+        errorCount++;
+        const msg = error instanceof Error ? error.message : String(error);
+        errors.push(`${file.basename}: ${msg}`);
+        if (statusSpan) {
+          statusSpan.textContent = `📄 ${file.basename} ✗ ${msg.substring(0, 80)}`;
+        }
+      }
+    }
+
+    // Update header with final summary
+    header.textContent = `✅ Republication terminée: ${successCount} réussi(s)${errorCount > 0 ? `, ${errorCount} erreur(s)` : ""}`;
+    if (errorCount > 0) {
+      this.logger.warn("Republish errors:", errors);
     }
 
     // Auto-hide after 5 seconds
@@ -1010,6 +1148,27 @@ export default class SubstackPublisherPlugin extends Plugin {
     const contentType = fm.type === "page" ? "page" : "article";
     const enluminurePath = typeof fm.enluminure === "string" ? fm.enluminure : undefined;
 
+    // Detect correct server from wordpress_url (may differ from default)
+    let actualApi = api;
+    let actualServer = server;
+    let actualImageHandler = imageHandler;
+    if (fm.wordpress_url && wordpressId) {
+      try {
+        const articleHost = new URL(String(fm.wordpress_url)).hostname;
+        const serverHost = new URL(server.baseUrl).hostname;
+        if (articleHost !== serverHost) {
+          const matched = this.settings.wordpressServers.find(s => {
+            try { return new URL(s.baseUrl).hostname === articleHost; } catch { return false; }
+          });
+          if (matched) {
+            actualServer = matched;
+            actualApi = new WordPressAPI(matched.baseUrl, matched.username, matched.password);
+            actualImageHandler = new WordPressImageHandler(actualApi, this.app.vault, this.logger);
+          }
+        }
+      } catch { /* invalid URL, use default */ }
+    }
+
     // Read content
     let content = await this.app.vault.cachedRead(file);
 
@@ -1021,7 +1180,7 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     // Process images - upload to WordPress (including enluminure)
     const basePath = file.parent?.path || "";
-    const imageResult = await imageHandler.processMarkdownImages(content, basePath, enluminurePath);
+    const imageResult = await actualImageHandler.processMarkdownImages(content, basePath, enluminurePath);
     content = imageResult.processedMarkdown;
 
     if (imageResult.errors.length > 0) {
@@ -1037,7 +1196,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     }
 
     // Convert markdown to HTML (full conversion)
-    let html = this.batchMarkdownToHtml(content);
+    let html = convertMarkdownToHtml(content);
 
     // Extract illustration (first image after H1)
     const { illustration, content: htmlWithoutIllustration } = this.extractIllustrationForBatch(html);
@@ -1062,9 +1221,9 @@ export default class SubstackPublisherPlugin extends Plugin {
     // Get category for articles
     let categoryId: number | undefined;
     if (contentType === "article") {
-      const category = fm.categorie || fm.category || server.defaultCategory;
-      if (category && server.categoryPageIds[category]) {
-        categoryId = server.categoryPageIds[category];
+      const category = fm.categorie || fm.category || actualServer.defaultCategory;
+      if (category && actualServer.categoryPageIds[category]) {
+        categoryId = actualServer.categoryPageIds[category];
       }
     }
 
@@ -1097,7 +1256,7 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     // Resolve tags
     if (Array.isArray(fm.tags) && fm.tags.length > 0) {
-      const tagResult = await api.resolveTagIds(fm.tags.filter((t: unknown): t is string => typeof t === "string"));
+      const tagResult = await actualApi.resolveTagIds(fm.tags.filter((t: unknown): t is string => typeof t === "string"));
       if (tagResult.ids.length > 0) {
         seoOptions.tags = tagResult.ids;
       }
@@ -1109,14 +1268,14 @@ export default class SubstackPublisherPlugin extends Plugin {
     if (wordpressId) {
       // Update existing
       if (contentType === "page") {
-        result = await api.updatePage(wordpressId, {
+        result = await actualApi.updatePage(wordpressId, {
           title,
           content: finalHtml,
           slug: seoOptions.slug,
           excerpt: seoOptions.excerpt
         });
       } else {
-        result = await api.updatePost(wordpressId, {
+        result = await actualApi.updatePost(wordpressId, {
           title,
           content: finalHtml,
           categories: categoryId ? [categoryId] : undefined,
@@ -1129,9 +1288,9 @@ export default class SubstackPublisherPlugin extends Plugin {
     } else {
       // Create new
       if (contentType === "page") {
-        result = await api.createPage(title, finalHtml, undefined, "publish");
+        result = await actualApi.createPage(title, finalHtml, undefined, "publish");
       } else if (categoryId) {
-        result = await api.createPost(title, finalHtml, [categoryId], "publish", seoOptions);
+        result = await actualApi.createPost(title, finalHtml, [categoryId], "publish", seoOptions);
       } else {
         throw new Error(`No category for article: ${title}`);
       }
@@ -1150,166 +1309,6 @@ export default class SubstackPublisherPlugin extends Plugin {
         frontmatter.wordpress_slug = result.data!.slug;
       });
     }
-  }
-
-  /**
-   * Full markdown to HTML conversion for batch publishing
-   * Same logic as PostComposer.markdownToHtml
-   */
-  private batchMarkdownToHtml(markdown: string): string {
-    let html = markdown;
-
-    // Convert markdown tables to HTML
-    html = this.convertBatchTablesToHtml(html);
-
-    // Headers
-    html = html.replace(/^######\s+(.+)$/gm, "<h6>$1</h6>");
-    html = html.replace(/^#####\s+(.+)$/gm, "<h5>$1</h5>");
-    html = html.replace(/^####\s+(.+)$/gm, "<h4>$1</h4>");
-    html = html.replace(/^###\s+(.+)$/gm, "<h3>$1</h3>");
-    html = html.replace(/^##\s+(.+)$/gm, "<h2>$1</h2>");
-    html = html.replace(/^#\s+(.+)$/gm, "<h1>$1</h1>");
-
-    // Bold and italic
-    html = html.replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>");
-    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
-
-    // Code blocks FIRST (before inline code to avoid interference)
-    html = html.replace(
-      /```(\w*)\r?\n([\s\S]*?)```/g,
-      (_, lang, code) => `<pre><code class="language-${lang}">${code.trim()}</code></pre>`
-    );
-
-    // Inline code (after code blocks)
-    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-
-    // Images (already processed to WordPress URLs)
-    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
-
-    // Links
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
-
-    // Blockquotes
-    html = html.replace(/^>\s+(.+)$/gm, "<blockquote>$1</blockquote>");
-    html = html.replace(/<\/blockquote>\n<blockquote>/g, "\n");
-
-    // Unordered lists
-    html = html.replace(/^[*-]\s+(.+)$/gm, "<li>$1</li>");
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>\n${match}</ul>\n`);
-
-    // Ordered lists
-    html = html.replace(/^\d+\.\s+(.+)$/gm, "<li>$1</li>");
-
-    // Horizontal rules
-    html = html.replace(/^---+$/gm, "<hr>");
-    html = html.replace(/^\*\*\*+$/gm, "<hr>");
-
-    // Paragraphs - wrap text blocks in <p> tags
-    const lines = html.split("\n");
-    const result: string[] = [];
-    let inParagraph = false;
-    let paragraphContent: string[] = [];
-    let inPreBlock = false;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-
-      // Track pre blocks to avoid processing their content
-      if (trimmed.startsWith("<pre") || trimmed.includes("<pre>")) {
-        inPreBlock = true;
-      }
-      if (trimmed.includes("</pre>") || trimmed.startsWith("</pre")) {
-        inPreBlock = false;
-        result.push(line);
-        continue;
-      }
-
-      // If inside a pre block, just add the line as-is
-      if (inPreBlock) {
-        result.push(line);
-        continue;
-      }
-
-      const isBlockElement =
-        trimmed.startsWith("<h") ||
-        trimmed.startsWith("<ul") ||
-        trimmed.startsWith("<ol") ||
-        trimmed.startsWith("<li") ||
-        trimmed.startsWith("</ul") ||
-        trimmed.startsWith("</ol") ||
-        trimmed.startsWith("<blockquote") ||
-        trimmed.startsWith("</blockquote") ||
-        trimmed.startsWith("<pre") ||
-        trimmed.startsWith("</pre") ||
-        trimmed.startsWith("<hr") ||
-        trimmed.startsWith("<img") ||
-        trimmed.startsWith("<table") ||
-        trimmed === "";
-
-      if (trimmed === "") {
-        if (inParagraph && paragraphContent.length > 0) {
-          result.push(`<p>${paragraphContent.join("<br>")}</p>`);
-          paragraphContent = [];
-          inParagraph = false;
-        }
-      } else if (isBlockElement) {
-        if (inParagraph && paragraphContent.length > 0) {
-          result.push(`<p>${paragraphContent.join("<br>")}</p>`);
-          paragraphContent = [];
-          inParagraph = false;
-        }
-        result.push(line);
-      } else {
-        inParagraph = true;
-        paragraphContent.push(trimmed);
-      }
-    }
-
-    if (inParagraph && paragraphContent.length > 0) {
-      result.push(`<p>${paragraphContent.join("<br>")}</p>`);
-    }
-
-    let finalHtml = result.join("\n");
-    finalHtml = finalHtml.replace(/^(\s*<p>&nbsp;<\/p>\s*)+/, "");
-    return finalHtml;
-  }
-
-  /**
-   * Convert markdown tables to HTML for batch
-   */
-  private convertBatchTablesToHtml(text: string): string {
-    const tableRegex = /\|(.+)\|\n\|[-:\s|]+\|\n((?:\|.+\|\n?)+)/g;
-    return text.replace(tableRegex, (match) => {
-      const lines = match.trim().split("\n");
-      if (lines.length < 3) return match;
-
-      const headerLine = lines[0] ?? "";
-      const headers = headerLine.split("|").map(h => h.trim()).filter(h => h);
-
-      const rows: string[][] = [];
-      for (let i = 2; i < lines.length; i++) {
-        const rowLine = lines[i] ?? "";
-        const cells = rowLine.split("|").map(c => c.trim()).filter(c => c);
-        if (cells.length > 0) rows.push(cells);
-      }
-
-      let html = "<table>\n<thead>\n<tr>\n";
-      for (const header of headers) {
-        html += `<th>${header}</th>\n`;
-      }
-      html += "</tr>\n</thead>\n<tbody>\n";
-
-      for (const row of rows) {
-        html += "<tr>\n";
-        for (let i = 0; i < headers.length; i++) {
-          html += `<td>${row[i] ?? ""}</td>\n`;
-        }
-        html += "</tr>\n";
-      }
-      html += "</tbody>\n</table>\n";
-      return html;
-    });
   }
 
   /**

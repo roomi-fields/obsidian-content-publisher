@@ -8,7 +8,7 @@ import {
 import { ILogger } from "../utils/logger";
 
 // Supported image formats
-const SUPPORTED_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"];
+const SUPPORTED_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 // MIME type mapping
@@ -17,7 +17,8 @@ const MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   gif: "image/gif",
-  webp: "image/webp"
+  webp: "image/webp",
+  svg: "image/svg+xml"
 };
 
 /**
@@ -297,6 +298,85 @@ export class WordPressImageHandler {
   }
 
   /**
+   * Convert an SVG file to PNG using the browser Canvas API (Electron),
+   * then upload the PNG to WordPress.
+   * WordPress blocks SVG uploads, so we rasterize them first.
+   */
+  private async convertSvgToPng(
+    vaultPath: string,
+    width?: number
+  ): Promise<{
+    success: boolean;
+    url?: string;
+    mediaId?: number;
+    error?: string;
+  }> {
+    const file = this.vault.getAbstractFileByPath(vaultPath);
+    if (!file || !(file instanceof TFile)) {
+      return { success: false, error: `SVG file not found: ${vaultPath}` };
+    }
+
+    const svgContent = await this.vault.read(file);
+
+    // Convert SVG to PNG via Canvas
+    const scale = 2; // 2x for retina/high-DPI
+    const targetWidth = width || 800;
+
+    try {
+      const pngData = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          // Compute dimensions preserving aspect ratio
+          const aspect = img.naturalHeight / img.naturalWidth;
+          const w = targetWidth;
+          const h = Math.round(w * aspect);
+
+          const canvas = document.createElement("canvas");
+          canvas.width = w * scale;
+          canvas.height = h * scale;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Failed to get canvas context"));
+            return;
+          }
+          ctx.scale(scale, scale);
+          ctx.drawImage(img, 0, 0, w, h);
+
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              reject(new Error("Canvas toBlob returned null"));
+              return;
+            }
+            blob.arrayBuffer().then(resolve).catch(reject);
+          }, "image/png");
+        };
+        img.onerror = () => reject(new Error("Failed to load SVG into Image"));
+
+        // Load SVG as data URI
+        const svgBlob = new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" });
+        img.src = URL.createObjectURL(svgBlob);
+      });
+
+      // Upload the PNG with a .png filename
+      const pngFilename = file.name.replace(/\.svg$/i, ".png");
+      const result = await this.api.uploadMedia(pngData, pngFilename, "image/png");
+
+      if (result.success && result.data) {
+        return {
+          success: true,
+          url: result.data.source_url,
+          mediaId: result.data.id
+        };
+      }
+
+      return { success: false, error: result.error || "PNG upload failed" };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: `SVG→PNG conversion failed: ${msg}` };
+    }
+  }
+
+  /**
    * Process enluminure specified in frontmatter
    * Uploads the image and returns enluminure info
    */
@@ -440,6 +520,28 @@ export class WordPressImageHandler {
       }
 
       this.logger.debug(`Processing image: ${ref.path} -> ${vaultPath}`);
+
+      // SVG: convert to PNG then upload (WordPress blocks SVG uploads by default)
+      const ext = this.getExtension(vaultPath);
+      if (ext === "svg") {
+        const svgResult = await this.convertSvgToPng(vaultPath, ref.wikiLinkSize);
+        if (svgResult.success && svgResult.url) {
+          const newImageMarkdown = `![${ref.alt || ref.path}](${svgResult.url})`;
+          processedMarkdown = processedMarkdown.replace(ref.fullMatch, newImageMarkdown);
+          if (svgResult.mediaId !== undefined) {
+            uploadedImages.push({
+              originalPath: ref.path,
+              wordpressUrl: svgResult.url,
+              mediaId: svgResult.mediaId
+            });
+          }
+          this.logger.info(`SVG→PNG: ${ref.path} -> ${svgResult.url}`);
+        } else {
+          errors.push({ path: ref.path, error: svgResult.error || "SVG conversion failed" });
+          this.logger.warn(`Failed SVG→PNG: ${ref.path} - ${svgResult.error}`);
+        }
+        continue;
+      }
 
       const result = await this.uploadImage(vaultPath);
 

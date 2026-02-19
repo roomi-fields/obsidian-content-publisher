@@ -81,9 +81,15 @@ export function convertMarkdownToHtml(markdown: string): string {
     }
   );
 
-  // Inline code
+  // Convert LaTeX text-mode commands to Unicode BEFORE inline code extraction.
+  // LaTeX \`{a} contains a backtick that would otherwise be misinterpreted as
+  // inline code start, swallowing content across lines.
+  // These are text-encoding commands — Unicode IS their faithful rendering.
+  html = convertLatexTextToUnicode(html);
+
+  // Inline code (restrict to single line to prevent cross-line matching)
   const inlineCodes: string[] = [];
-  html = html.replace(/`([^`]+)`/g, (_, code) => {
+  html = html.replace(/`([^`\n]+)`/g, (_, code) => {
     const escaped = code
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
@@ -385,4 +391,98 @@ function parseTableToHtml(tableText: string): string | null {
 
   tableHtml += "</tbody>\n</table>\n";
   return tableHtml;
+}
+
+/**
+ * Convert LaTeX text-mode commands to their Unicode equivalents.
+ * Only handles character-encoding commands (accents, punctuation marks).
+ * Protects math regions ($...$, $$...$$) — those are left intact for KaTeX.
+ *
+ * This is 100% faithful: \'{e} renders as é in LaTeX, \guillemotleft as «, etc.
+ */
+function convertLatexTextToUnicode(text: string): string {
+  // Step 1: Protect math regions by replacing them with placeholders
+  const mathRegions: string[] = [];
+
+  // Display math $$...$$ first (greedy before inline)
+  let safe = text.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
+    const idx = mathRegions.length;
+    mathRegions.push(match);
+    return `\x00MATH${idx}\x00`;
+  });
+
+  // Inline math $...$
+  safe = safe.replace(/(?<!\$)\$(?!\$)([^\n$]+?)\$(?!\$)/g, (match) => {
+    const idx = mathRegions.length;
+    mathRegions.push(match);
+    return `\x00MATH${idx}\x00`;
+  });
+
+  // Step 2: Convert LaTeX text commands in remaining (non-math) text
+  safe = convertLatexAccents(safe);
+  safe = convertLatexNamedCommands(safe);
+
+  // Step 3: Restore math regions untouched
+  for (let i = 0; i < mathRegions.length; i++) {
+    safe = safe.replace(`\x00MATH${i}\x00`, mathRegions[i] ?? "");
+  }
+
+  return safe;
+}
+
+/** Replace braced accent commands: \'{e} → é, \`{a} → à, \^{i} → î, \c{c} → ç, etc. */
+function convertLatexAccents(text: string): string {
+  const bracedAccents: Record<string, Record<string, string>> = {
+    "'": { a: "á", e: "é", i: "í", o: "ó", u: "ú", y: "ý", A: "Á", E: "É", I: "Í", O: "Ó", U: "Ú", Y: "Ý" },
+    "`": { a: "à", e: "è", i: "ì", o: "ò", u: "ù", A: "À", E: "È", I: "Ì", O: "Ò", U: "Ù" },
+    "^": { a: "â", e: "ê", i: "î", o: "ô", u: "û", A: "Â", E: "Ê", I: "Î", O: "Ô", U: "Û" },
+    "\"": { a: "ä", e: "ë", i: "ï", o: "ö", u: "ü", y: "ÿ", A: "Ä", E: "Ë", I: "Ï", O: "Ö", U: "Ü" },
+    "~": { a: "ã", n: "ñ", o: "õ", A: "Ã", N: "Ñ", O: "Õ" },
+    "c": { c: "ç", C: "Ç" }
+  };
+
+  return text.replace(/\\(['^"`~c])\{(\w)\}/g, (match, accent, letter) => {
+    const map = bracedAccents[accent as string];
+    return map?.[letter as string] ?? match;
+  });
+}
+
+/** Replace named LaTeX text commands: \guillemotleft → «, \oe → œ, etc. */
+function convertLatexNamedCommands(text: string): string {
+  const namedCommands: [RegExp, string][] = [
+    // Longest first to avoid partial matches
+    [/\\guillemotright(?:\\\s|(?=[\s{}.,;:!?\]]))/g, "»"],
+    [/\\guillemotleft(?:\\\s|(?=[\s{}.,;:!?\]]))/g, "«"],
+    [/\\textellipsis(?=[\s{}.,;:!?])/g, "…"],
+    [/\\textemdash(?=[\s{}.,;:!?])/g, "—"],
+    [/\\textendash(?=[\s{}.,;:!?])/g, "–"],
+    [/\\copyright(?=[\s{}.,;:!?])/g, "©"],
+    [/\\pounds(?=[\s{}.,;:!?])/g, "£"],
+    [/\\ldots(?=[\s{}.,;:!?])/g, "…"],
+    [/\\dots(?=[\s{}.,;:!?])/g, "…"],
+    [/\\euro(?=[\s{}.,;:!?])/g, "€"],
+    [/\\ddag(?=[\s{}.,;:!?])/g, "‡"],
+    [/\\dag(?=[\s{}.,;:!?])/g, "†"],
+    [/\\OE(?=[\s{}.,;:!?])/g, "Œ"],
+    [/\\AE(?=[\s{}.,;:!?])/g, "Æ"],
+    [/\\AA(?=[\s{}.,;:!?])/g, "Å"],
+    [/\\oe(?=[\s{}.,;:!?])/g, "œ"],
+    [/\\ae(?=[\s{}.,;:!?])/g, "æ"],
+    [/\\ss(?=[\s{}.,;:!?])/g, "ß"],
+    [/\\aa(?=[\s{}.,;:!?])/g, "å"],
+    [/\\o(?=[\s{}.,;:!?])/g, "ø"],
+    [/\\O(?=[\s{}.,;:!?])/g, "Ø"]
+  ];
+
+  for (const [regex, replacement] of namedCommands) {
+    text = text.replace(regex, (match) => {
+      // \guillemotright\ (backslash-space) → » + space
+      if (match.endsWith("\\ ") || match.endsWith("\\\t")) {
+        return `${replacement} `;
+      }
+      return replacement;
+    });
+  }
+
+  return text;
 }

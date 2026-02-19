@@ -1,4 +1,4 @@
-import { TFile, Vault } from "obsidian";
+import { App, Component, MarkdownRenderer, TFile, Vault } from "obsidian";
 import { WordPressAPI } from "./api";
 import {
   WordPressImageReference,
@@ -26,12 +26,14 @@ const MIME_TYPES: Record<string, string> = {
  */
 export class WordPressImageHandler {
   private api: WordPressAPI;
+  private app: App;
   private vault: Vault;
   private logger: ILogger;
 
-  constructor(api: WordPressAPI, vault: Vault, logger: ILogger) {
+  constructor(api: WordPressAPI, app: App, logger: ILogger) {
     this.api = api;
-    this.vault = vault;
+    this.app = app;
+    this.vault = app.vault;
     this.logger = logger;
   }
 
@@ -442,6 +444,289 @@ export class WordPressImageHandler {
     }
 
     return null;
+  }
+
+  /**
+   * Process TikZ blocks in markdown: render via tikzjax, convert SVG→PNG, upload to WordPress.
+   * Replaces each ````tikz block with a standard markdown image pointing to the uploaded PNG.
+   * Must be called BEFORE processMarkdownImages so that the resulting ![](url) gets picked up normally.
+   */
+  async processTikzBlocks(markdown: string): Promise<string> {
+    // Match ````tikz blocks (4 backticks)
+    const tikzRegex = /````tikz\n([\s\S]*?)````/g;
+    const matches: { fullMatch: string; tikzCode: string }[] = [];
+
+    let m;
+    while ((m = tikzRegex.exec(markdown)) !== null) {
+      matches.push({ fullMatch: m[0], tikzCode: m[1] ?? "" });
+    }
+
+    if (matches.length === 0) {
+      return markdown;
+    }
+
+    this.logger.info(`Found ${matches.length} TikZ block(s) to convert`);
+    let result = markdown;
+
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
+      if (!match) continue;
+
+      try {
+        const pngUrl = await this.renderTikzToPng(match.tikzCode, i);
+        if (pngUrl) {
+          result = result.replace(match.fullMatch, `![TikZ diagram](${pngUrl})`);
+          this.logger.info(`TikZ block ${i + 1}/${matches.length} → ${pngUrl}`);
+        } else {
+          this.logger.warn(`TikZ block ${i + 1}/${matches.length}: conversion failed, keeping original`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`TikZ block ${i + 1}/${matches.length} error: ${msg}`);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Render a single TikZ code block to PNG and upload to WordPress.
+   * Uses MarkdownRenderer to trigger tikzjax, captures the SVG, converts to PNG via Canvas.
+   */
+  private async renderTikzToPng(tikzCode: string, index: number): Promise<string | null> {
+    // Create a hidden container in the DOM
+    const container = document.createElement("div");
+    container.style.position = "fixed";
+    container.style.left = "-9999px";
+    container.style.top = "-9999px";
+    document.body.appendChild(container);
+
+    try {
+      // Render the TikZ block via Obsidian's MarkdownRenderer (triggers tikzjax)
+      const tikzMarkdown = `\`\`\`\`tikz\n${tikzCode}\`\`\`\``;
+      const component = new Component();
+      component.load();
+
+      await MarkdownRenderer.render(
+        this.app,
+        tikzMarkdown,
+        container,
+        "",
+        component
+      );
+
+      // Wait for tikzjax to produce an SVG (MutationObserver with timeout)
+      const svgElement = await this.waitForSvg(container, 15000);
+      component.unload();
+
+      if (!svgElement) {
+        this.logger.warn(`TikZ block ${index}: no SVG produced after timeout`);
+        return null;
+      }
+
+      // Inline fonts into SVG so they survive Image sandboxing
+      await this.inlineSvgFonts(svgElement);
+
+      // Convert SVG element to PNG via Canvas
+      const svgContent = new XMLSerializer().serializeToString(svgElement);
+      const pngData = await this.svgStringToPng(svgContent, 800);
+
+      // Upload to WordPress
+      const filename = `tikz-diagram-${Date.now()}-${index}.png`;
+      const uploadResult = await this.api.uploadMedia(pngData, filename, "image/png");
+
+      if (uploadResult.success && uploadResult.data) {
+        return uploadResult.data.source_url;
+      }
+
+      this.logger.warn(`TikZ upload failed: ${uploadResult.error}`);
+      return null;
+    } finally {
+      document.body.removeChild(container);
+    }
+  }
+
+  /**
+   * Wait for an SVG element to appear in the container (produced by tikzjax).
+   * Uses MutationObserver with a timeout.
+   */
+  private waitForSvg(container: HTMLElement, timeoutMs: number): Promise<SVGElement | null> {
+    return new Promise((resolve) => {
+      // Check if SVG is already there
+      const existing = container.querySelector("svg");
+      if (existing) {
+        resolve(existing as SVGElement);
+        return;
+      }
+
+      const observer = new MutationObserver(() => {
+        const svg = container.querySelector("svg");
+        if (svg) {
+          observer.disconnect();
+          clearTimeout(timer);
+          resolve(svg as SVGElement);
+        }
+      });
+
+      observer.observe(container, { childList: true, subtree: true });
+
+      const timer = setTimeout(() => {
+        observer.disconnect();
+        // One last check
+        const svg = container.querySelector("svg");
+        resolve(svg as SVGElement | null);
+      }, timeoutMs);
+    });
+  }
+
+  /**
+   * Inline @font-face rules into the SVG so fonts survive Image sandboxing.
+   * Finds all font-family references in the SVG, locates matching @font-face rules
+   * in the document stylesheets, converts font URLs to data URIs, and injects them
+   * as a <style> element inside the SVG <defs>.
+   */
+  private async inlineSvgFonts(svgElement: SVGElement): Promise<void> {
+    // Collect all font-family values used in the SVG (attributes + inline styles)
+    const fontFamilies = new Set<string>();
+
+    svgElement.querySelectorAll("[font-family]").forEach(el => {
+      const ff = el.getAttribute("font-family");
+      if (ff) fontFamilies.add(ff.replace(/['"]/g, ""));
+    });
+
+    svgElement.querySelectorAll("[style]").forEach(el => {
+      const style = el.getAttribute("style") || "";
+      const match = style.match(/font-family:\s*([^;]+)/);
+      if (match?.[1]) fontFamilies.add(match[1].trim().replace(/['"]/g, ""));
+    });
+
+    // Also check computed styles on text elements
+    svgElement.querySelectorAll("text").forEach(el => {
+      try {
+        const computed = getComputedStyle(el);
+        const ff = computed.fontFamily;
+        if (ff) fontFamilies.add(ff.replace(/['"]/g, "").split(",")[0]?.trim() || "");
+      } catch { /* ignore */ }
+    });
+
+    fontFamilies.delete("");
+    if (fontFamilies.size === 0) {
+      this.logger.debug("No font families found in SVG");
+      return;
+    }
+
+    this.logger.debug(`SVG font families to inline: ${[...fontFamilies].join(", ")}`);
+
+    // Find matching @font-face rules in document stylesheets
+    const inlinedRules: string[] = [];
+
+    for (const sheet of Array.from(document.styleSheets)) {
+      let rules: CSSRuleList;
+      try {
+        rules = sheet.cssRules;
+      } catch {
+        continue; // Cross-origin stylesheet
+      }
+
+      for (const rule of Array.from(rules)) {
+        if (!(rule instanceof CSSFontFaceRule)) continue;
+
+        const family = rule.style.getPropertyValue("font-family").replace(/['"]/g, "");
+        if (!fontFamilies.has(family)) continue;
+
+        // Convert font URL to data URI
+        let cssText = rule.cssText;
+        const urlMatches = cssText.matchAll(/url\(["']?([^"')]+)["']?\)/g);
+
+        for (const urlMatch of urlMatches) {
+          const fontUrl = urlMatch[1];
+          if (!fontUrl) continue;
+
+          try {
+            const response = await fetch(fontUrl);
+            const blob = await response.blob();
+            const dataUri = await this.blobToDataUri(blob);
+            cssText = cssText.replace(urlMatch[0], `url(${dataUri})`);
+          } catch {
+            this.logger.debug(`Could not inline font URL: ${fontUrl}`);
+          }
+        }
+
+        inlinedRules.push(cssText);
+      }
+    }
+
+    if (inlinedRules.length === 0) {
+      this.logger.debug("No @font-face rules found to inline");
+      return;
+    }
+
+    this.logger.info(`Inlined ${inlinedRules.length} @font-face rule(s) into SVG`);
+
+    // Inject into SVG <defs>
+    const svgNS = "http://www.w3.org/2000/svg";
+    let defs = svgElement.querySelector("defs");
+    if (!defs) {
+      defs = document.createElementNS(svgNS, "defs");
+      svgElement.prepend(defs);
+    }
+
+    const styleEl = document.createElementNS(svgNS, "style");
+    styleEl.textContent = inlinedRules.join("\n");
+    defs.appendChild(styleEl);
+  }
+
+  /**
+   * Convert a Blob to a data URI string.
+   */
+  private blobToDataUri(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("FileReader failed"));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  /**
+   * Convert an SVG string to PNG ArrayBuffer using Canvas.
+   * Transparent background — no white fill.
+   */
+  private svgStringToPng(svgContent: string, targetWidth: number): Promise<ArrayBuffer> {
+    const scale = 2; // 2x for retina/high-DPI
+
+    return new Promise<ArrayBuffer>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const aspect = img.naturalHeight / img.naturalWidth;
+        const w = targetWidth;
+        const h = Math.round(w * aspect);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = w * scale;
+        canvas.height = h * scale;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Failed to get canvas context"));
+          return;
+        }
+        // Transparent background — no fillRect
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0, w, h);
+
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error("Canvas toBlob returned null"));
+            return;
+          }
+          blob.arrayBuffer().then(resolve).catch(reject);
+        }, "image/png");
+      };
+      img.onerror = () => reject(new Error("Failed to load SVG into Image"));
+
+      const svgBlob = new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" });
+      img.src = URL.createObjectURL(svgBlob);
+    });
   }
 
   /**

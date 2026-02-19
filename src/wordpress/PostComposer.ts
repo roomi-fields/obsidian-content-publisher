@@ -89,7 +89,7 @@ export class WordPressPostComposer extends Modal {
     );
 
     this.wikiLinkConverter = new WikiLinkConverter(app, logger);
-    this.imageHandler = new WordPressImageHandler(this.api, app.vault, logger);
+    this.imageHandler = new WordPressImageHandler(this.api, app, logger);
   }
 
   private switchServer(server: WordPressServer): void {
@@ -105,7 +105,7 @@ export class WordPressPostComposer extends Modal {
     );
 
     // WikiLinkConverter doesn't depend on server, no need to recreate
-    this.imageHandler = new WordPressImageHandler(this.api, this.app.vault, this.logger);
+    this.imageHandler = new WordPressImageHandler(this.api, this.app, this.logger);
 
     // Update category dropdown with Polylang filtering
     if (this.categorySelectEl) {
@@ -768,6 +768,9 @@ export class WordPressPostComposer extends Modal {
     const content = await this.app.vault.cachedRead(activeFile);
     // Remove frontmatter
     let cleanContent = content.replace(/^---[\s\S]*?---\n?/, "");
+
+    // Convert TikZ blocks to PNG images (must run before processMarkdownImages)
+    cleanContent = await this.imageHandler.processTikzBlocks(cleanContent);
 
     // Process images - upload local images to WordPress
     // This also detects and uploads enluminure separately
@@ -1714,6 +1717,9 @@ ${illustrationImg}
 
     let markdown = langContent.content;
 
+    // Convert TikZ blocks to PNG images (must run before processMarkdownImages)
+    markdown = await this.imageHandler.processTikzBlocks(markdown);
+
     // Process images - enluminure can be specified in the language content
     const basePath = this.activeFile.parent?.path || "";
     const imageResult = await this.imageHandler.processMarkdownImages(
@@ -1894,8 +1900,11 @@ ${illustrationImg}
       // ===== PUBLISH EN VERSION =====
       const enContentRaw = await this.app.vault.cachedRead(this.englishFile);
       // Remove frontmatter from EN content
-      const enContent = enContentRaw.replace(/^---[\s\S]*?---\n?/, "");
+      let enContent = enContentRaw.replace(/^---[\s\S]*?---\n?/, "");
       const enBasePath = this.englishFile.parent?.path || "";
+
+      // Convert TikZ blocks to PNG images (must run before processMarkdownImages)
+      enContent = await this.imageHandler.processTikzBlocks(enContent);
 
       // Process EN images
       const enImageResult = await this.imageHandler.processMarkdownImages(

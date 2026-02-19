@@ -912,7 +912,7 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     // Initialize handlers (same as PostComposer)
     const api = new WordPressAPI(server.baseUrl, server.username, server.password);
-    const imageHandler = new WordPressImageHandler(api, this.app.vault, this.logger);
+    const imageHandler = new WordPressImageHandler(api, this.app, this.logger);
     const wikiLinkConverter = new WikiLinkConverter(this.app, this.logger);
 
     // Track published files to avoid duplicate updates
@@ -1061,7 +1061,7 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     // Initialize handlers (same as batchPublishFolder)
     const api = new WordPressAPI(server.baseUrl, server.username, server.password);
-    const imageHandler = new WordPressImageHandler(api, this.app.vault, this.logger);
+    const imageHandler = new WordPressImageHandler(api, this.app, this.logger);
     const wikiLinkConverter = new WikiLinkConverter(this.app, this.logger);
 
     let successCount = 0;
@@ -1163,7 +1163,7 @@ export default class SubstackPublisherPlugin extends Plugin {
           if (matched) {
             actualServer = matched;
             actualApi = new WordPressAPI(matched.baseUrl, matched.username, matched.password);
-            actualImageHandler = new WordPressImageHandler(actualApi, this.app.vault, this.logger);
+            actualImageHandler = new WordPressImageHandler(actualApi, this.app, this.logger);
           }
         }
       } catch { /* invalid URL, use default */ }
@@ -1177,6 +1177,9 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     // Remove dataviewjs blocks
     content = content.replace(/```dataviewjs[\s\S]*?```\n*/g, "");
+
+    // Convert TikZ blocks to PNG images (must run before processMarkdownImages)
+    content = await actualImageHandler.processTikzBlocks(content);
 
     // Process images - upload to WordPress (including enluminure)
     const basePath = file.parent?.path || "";

@@ -452,13 +452,16 @@ export class WordPressImageHandler {
    * Must be called BEFORE processMarkdownImages so that the resulting ![](url) gets picked up normally.
    */
   async processTikzBlocks(markdown: string): Promise<string> {
-    // Match ````tikz blocks (4 backticks)
-    const tikzRegex = /````tikz\n([\s\S]*?)````/g;
+    // Normalize CRLF → LF (Windows files use \r\n which breaks regex matching)
+    markdown = markdown.replace(/\r\n/g, "\n");
+
+    // Match ```tikz or ````tikz blocks (3 or 4 backticks)
+    const tikzRegex = /(`{3,4})tikz\n([\s\S]*?)\1/g;
     const matches: { fullMatch: string; tikzCode: string }[] = [];
 
     let m;
     while ((m = tikzRegex.exec(markdown)) !== null) {
-      matches.push({ fullMatch: m[0], tikzCode: m[1] ?? "" });
+      matches.push({ fullMatch: m[0], tikzCode: m[2] ?? "" });
     }
 
     if (matches.length === 0) {
@@ -466,23 +469,28 @@ export class WordPressImageHandler {
     }
 
     this.logger.info(`Found ${matches.length} TikZ block(s) to convert`);
+    console.log(`[TikZ] Found ${matches.length} block(s) to convert`);
     let result = markdown;
 
     for (let i = 0; i < matches.length; i++) {
       const match = matches[i];
       if (!match) continue;
 
+      console.log(`[TikZ] Rendering block ${i + 1}/${matches.length}...`);
       try {
         const pngUrl = await this.renderTikzToPng(match.tikzCode, i);
         if (pngUrl) {
           result = result.replace(match.fullMatch, `![TikZ diagram](${pngUrl})`);
           this.logger.info(`TikZ block ${i + 1}/${matches.length} → ${pngUrl}`);
+          console.log(`[TikZ] ✓ Block ${i + 1}/${matches.length} → ${pngUrl}`);
         } else {
           this.logger.warn(`TikZ block ${i + 1}/${matches.length}: conversion failed, keeping original`);
+          console.warn(`[TikZ] ✗ Block ${i + 1}/${matches.length}: conversion failed`);
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         this.logger.warn(`TikZ block ${i + 1}/${matches.length} error: ${msg}`);
+        console.error(`[TikZ] ✗ Block ${i + 1}/${matches.length} error: ${msg}`);
       }
     }
 
@@ -547,32 +555,44 @@ export class WordPressImageHandler {
   }
 
   /**
-   * Wait for an SVG element to appear in the container (produced by tikzjax).
-   * Uses MutationObserver with a timeout.
+   * Wait for tikzjax to produce a fully rendered SVG in the container.
+   * tikzjax may insert intermediate states (loading placeholder) before the final SVG.
+   * We wait for an SVG to appear, then wait for the DOM to stabilize (no mutations
+   * for `stabilizeMs`) before capturing.
    */
   private waitForSvg(container: HTMLElement, timeoutMs: number): Promise<SVGElement | null> {
-    return new Promise((resolve) => {
-      // Check if SVG is already there
-      const existing = container.querySelector("svg");
-      if (existing) {
-        resolve(existing as SVGElement);
-        return;
-      }
+    const stabilizeMs = 2000; // Wait 2s of no mutations after SVG appears
 
-      const observer = new MutationObserver(() => {
+    return new Promise((resolve) => {
+      let stabilizeTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const tryResolve = () => {
         const svg = container.querySelector("svg");
         if (svg) {
-          observer.disconnect();
-          clearTimeout(timer);
-          resolve(svg as SVGElement);
+          // Reset the stabilize timer on every mutation — only resolve
+          // once the SVG has been stable for stabilizeMs
+          if (stabilizeTimer) clearTimeout(stabilizeTimer);
+          stabilizeTimer = setTimeout(() => {
+            observer.disconnect();
+            clearTimeout(deadlineTimer);
+            resolve(svg as SVGElement);
+          }, stabilizeMs);
         }
+      };
+
+      const observer = new MutationObserver(() => {
+        tryResolve();
       });
 
-      observer.observe(container, { childList: true, subtree: true });
+      observer.observe(container, { childList: true, subtree: true, attributes: true });
 
-      const timer = setTimeout(() => {
+      // Also check immediately in case SVG is already there
+      tryResolve();
+
+      // Hard deadline — resolve with whatever we have
+      const deadlineTimer = setTimeout(() => {
         observer.disconnect();
-        // One last check
+        if (stabilizeTimer) clearTimeout(stabilizeTimer);
         const svg = container.querySelector("svg");
         resolve(svg as SVGElement | null);
       }, timeoutMs);

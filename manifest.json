@@ -3,7 +3,7 @@
   "name": "Content Publisher",
   "version": "2.3.0",
   "minAppVersion": "1.0.0",
-  "description": "Publish your Obsidian notes to multiple platforms: Substack, WordPress, and more.",
+  "description": "Publish your notes to multiple platforms: Substack, WordPress, and more.",
   "author": "Romain Peyrichou",
   "authorUrl": "https://github.com/roomi-fields",
   "fundingUrl": "",

@@ -1,4 +1,4 @@
-/* global HTMLTextAreaElement */
+/* global HTMLTextAreaElement -- used by textarea element type */
 import { App, Modal, Notice, Setting, TFile } from "obsidian";
 import { LinkedInAPI } from "./api";
 import { LinkedInMarkdownConverter } from "./converter";
@@ -64,7 +64,11 @@ export class LinkedInPostComposer extends Modal {
     this.visibility = this.options.defaultVisibility;
   }
 
-  override async onOpen() {
+  override onOpen() {
+    void this.initializeModal();
+  }
+
+  private async initializeModal(): Promise<void> {
     const { contentEl } = this;
 
     // Get active file and read frontmatter
@@ -73,7 +77,7 @@ export class LinkedInPostComposer extends Modal {
     this.loadFrontmatter();
 
     // Detect bilingual content
-    await this.detectBilingualContent();
+    this.detectBilingualContent();
 
     // Title
     const titleText = this.isBilingual
@@ -109,7 +113,7 @@ export class LinkedInPostComposer extends Modal {
       langSelect.addEventListener("change", () => {
         this.selectedLanguage = langSelect.value as PolylangLanguage;
         this.updateFieldsForLanguage();
-        this.updatePreview();
+        void this.updatePreview();
       });
     }
 
@@ -142,7 +146,7 @@ export class LinkedInPostComposer extends Modal {
     typeSelect.addEventListener("change", () => {
       this.postType = typeSelect.value as typeof this.postType;
       this.updateArticleUrlVisibility();
-      this.updatePreview();
+      void this.updatePreview();
     });
 
     // Article URL input (only shown for article type)
@@ -173,7 +177,7 @@ export class LinkedInPostComposer extends Modal {
 
     articleUrlInput.addEventListener("input", () => {
       this.articleUrl = articleUrlInput.value;
-      this.updatePreview();
+      void this.updatePreview();
     });
 
     // Auto-select "Shared Article" if we have an article URL
@@ -287,7 +291,7 @@ export class LinkedInPostComposer extends Modal {
         .map((t) => t.trim())
         .filter((t) => t.length > 0)
         .map((t) => (t.startsWith("#") ? t : `#${t}`));
-      this.updatePreview();
+      void this.updatePreview();
     });
 
     // Content preview
@@ -315,7 +319,7 @@ export class LinkedInPostComposer extends Modal {
     });
 
     // Initialize preview
-    this.updatePreview();
+    void this.updatePreview();
 
     // Buttons
     const buttonContainer = contentEl.createDiv({
@@ -558,7 +562,7 @@ export class LinkedInPostComposer extends Modal {
   /**
    * Detect bilingual content in the active file
    */
-  private async detectBilingualContent(): Promise<void> {
+  private detectBilingualContent(): void {
     if (!this.activeFile || !this.rawContent) return;
 
     if (isBilingualContent(this.rawContent)) {
@@ -634,8 +638,11 @@ export class LinkedInPostComposer extends Modal {
       ".linkedin-article-url"
     ) as HTMLElement;
     if (articleUrlContainer) {
-      articleUrlContainer.style.display =
-        this.postType === "article" ? "block" : "none";
+      if (this.postType === "article") {
+        articleUrlContainer.classList.remove("linkedin-section-hidden");
+      } else {
+        articleUrlContainer.classList.add("linkedin-section-hidden");
+      }
     }
   }
 
@@ -648,20 +655,24 @@ export class LinkedInPostComposer extends Modal {
     ) as HTMLElement;
     if (counterEl && this.previewEl) {
       const length = this.previewEl.value.length;
-      const color = length > 3000 ? "red" : length > 2700 ? "orange" : "";
       counterEl.textContent = `${length} / 3000 characters`;
-      counterEl.style.color = color;
+      counterEl.classList.remove("linkedin-counter-warning", "linkedin-counter-error");
+      if (length > 3000) {
+        counterEl.classList.add("linkedin-counter-error");
+      } else if (length > 2700) {
+        counterEl.classList.add("linkedin-counter-warning");
+      }
     }
   }
 
   /**
    * Update the preview textarea with formatted content
    */
-  private async updatePreview(): Promise<void> {
+  private updatePreview(): void {
     if (!this.previewEl) return;
 
     try {
-      const content = await this.getFormattedContent();
+      const content = this.getFormattedContent();
       this.previewEl.value = content;
       this.content = content;
       this.updateCharacterCounter();
@@ -673,7 +684,7 @@ export class LinkedInPostComposer extends Modal {
   /**
    * Get formatted content for LinkedIn
    */
-  private async getFormattedContent(): Promise<string> {
+  private getFormattedContent(): string {
     if (!this.activeFile) return "";
 
     let contentToProcess: string;

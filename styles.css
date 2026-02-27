@@ -753,3 +753,27 @@
     font-family: monospace;
     font-size: 12px;
 }
+
+/* Shared utilities */
+.batch-notice-container { max-height: 400px; overflow-y: auto; }
+.batch-notice-header { font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid var(--text-muted); padding-bottom: 4px; }
+.batch-notice-line { padding: 2px 0; }
+.settings-cursor-text { cursor: text; }
+.batch-publish-buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+/* WordPress */
+.wordpress-info-banner { background: var(--background-modifier-success, #d4edda); color: var(--text-success, #155724); padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; }
+.wordpress-warning-banner { background: var(--background-modifier-warning, #fff3cd); color: var(--text-warning, #856404); padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; }
+.wordpress-option-container { margin-top: 12px; display: flex; align-items: center; gap: 8px; }
+.wordpress-category-hidden { display: none; }
+
+/* Substack */
+.substack-section-hidden { display: none; }
+
+/* LinkedIn */
+.linkedin-section-hidden { display: none; }
+.linkedin-counter-warning { color: orange; }
+.linkedin-counter-error { color: red; }
+
+/* TikZ rendering */
+.tikz-render-container { position: fixed; left: -9999px; top: -9999px; }

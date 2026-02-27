@@ -1,4 +1,4 @@
-import { App, Component, MarkdownRenderer, TFile, Vault } from "obsidian";
+import { App, Component, MarkdownRenderer, requestUrl, TFile, Vault } from "obsidian";
 import { WordPressAPI } from "./api";
 import {
   WordPressImageReference,
@@ -469,28 +469,23 @@ export class WordPressImageHandler {
     }
 
     this.logger.info(`Found ${matches.length} TikZ block(s) to convert`);
-    console.log(`[TikZ] Found ${matches.length} block(s) to convert`);
     let result = markdown;
 
     for (let i = 0; i < matches.length; i++) {
       const match = matches[i];
       if (!match) continue;
 
-      console.log(`[TikZ] Rendering block ${i + 1}/${matches.length}...`);
       try {
         const pngUrl = await this.renderTikzToPng(match.tikzCode, i);
         if (pngUrl) {
           result = result.replace(match.fullMatch, `![TikZ diagram](${pngUrl})`);
           this.logger.info(`TikZ block ${i + 1}/${matches.length} → ${pngUrl}`);
-          console.log(`[TikZ] ✓ Block ${i + 1}/${matches.length} → ${pngUrl}`);
         } else {
           this.logger.warn(`TikZ block ${i + 1}/${matches.length}: conversion failed, keeping original`);
-          console.warn(`[TikZ] ✗ Block ${i + 1}/${matches.length}: conversion failed`);
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         this.logger.warn(`TikZ block ${i + 1}/${matches.length} error: ${msg}`);
-        console.error(`[TikZ] ✗ Block ${i + 1}/${matches.length} error: ${msg}`);
       }
     }
 
@@ -504,9 +499,7 @@ export class WordPressImageHandler {
   private async renderTikzToPng(tikzCode: string, index: number): Promise<string | null> {
     // Create a hidden container in the DOM
     const container = document.createElement("div");
-    container.style.position = "fixed";
-    container.style.left = "-9999px";
-    container.style.top = "-9999px";
+    container.classList.add("tikz-render-container");
     document.body.appendChild(container);
 
     try {
@@ -663,9 +656,18 @@ export class WordPressImageHandler {
           if (!fontUrl) continue;
 
           try {
-            const response = await fetch(fontUrl);
-            const blob = await response.blob();
-            const dataUri = await this.blobToDataUri(blob);
+            const response = await requestUrl({ url: fontUrl, throw: false });
+            const bytes = new Uint8Array(response.arrayBuffer);
+            let binary = "";
+            for (let j = 0; j < bytes.length; j++) {
+              binary += String.fromCharCode(bytes[j]!);
+            }
+            const b64 = globalThis.btoa(binary);
+            // Guess MIME from URL extension
+            const ext = fontUrl.split(".").pop()?.split("?")[0]?.toLowerCase() || "";
+            const mimeMap: Record<string, string> = { woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf", otf: "font/otf" };
+            const mime = mimeMap[ext] || "application/octet-stream";
+            const dataUri = `data:${mime};base64,${b64}`;
             cssText = cssText.replace(urlMatch[0], `url(${dataUri})`);
           } catch {
             this.logger.debug(`Could not inline font URL: ${fontUrl}`);
@@ -694,18 +696,6 @@ export class WordPressImageHandler {
     const styleEl = document.createElementNS(svgNS, "style");
     styleEl.textContent = inlinedRules.join("\n");
     defs.appendChild(styleEl);
-  }
-
-  /**
-   * Convert a Blob to a data URI string.
-   */
-  private blobToDataUri(blob: Blob): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(new Error("FileReader failed"));
-      reader.readAsDataURL(blob);
-    });
   }
 
   /**

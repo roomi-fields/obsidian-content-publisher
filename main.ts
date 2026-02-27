@@ -5,9 +5,10 @@ import {
   Platform,
   Plugin,
   PluginSettingTab,
+  requestUrl,
   Setting,
   TFile,
-  TFolder,
+  TFolder
 } from "obsidian";
 import { Logger, LogLevel, createLogger } from "./src/utils/logger";
 import { SubstackAPI } from "./src/substack/api";
@@ -16,7 +17,7 @@ import { SubstackAuth } from "./src/substack/auth";
 import { SubstackAudience, SubstackSection } from "./src/substack/types";
 import { WordPressAPI } from "./src/wordpress/api";
 import { WordPressPostComposer } from "./src/wordpress/PostComposer";
-import { WordPressCategoryMapping, WordPressServer, PolylangConfig, PolylangCategoryMapping, WordPressEnluminureInfo, RankMathMeta } from "./src/wordpress/types";
+import { WordPressCategoryMapping, WordPressServer, WordPressEnluminureInfo, RankMathMeta } from "./src/wordpress/types";
 import { WordPressImageHandler } from "./src/wordpress/imageHandler";
 import { WikiLinkConverter } from "./src/wordpress/wikiLinkConverter";
 import { convertMarkdownToHtml } from "./src/wordpress/markdownConverter";
@@ -79,7 +80,7 @@ const DEFAULT_SETTINGS: SubstackPublisherSettings = {
   linkedinEnabled: false,
   linkedinAccessToken: "",
   linkedinPersonId: "",
-  linkedinDefaultVisibility: "PUBLIC",
+  linkedinDefaultVisibility: "PUBLIC"
 };
 
 export default class SubstackPublisherPlugin extends Plugin {
@@ -92,7 +93,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     this.logger = createLogger(
       "Content Publisher",
       this.settings.devMode,
-      this.settings.logLevel,
+      this.settings.logLevel
     );
 
     if ("setApp" in this.logger) {
@@ -103,10 +104,10 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     const ribbonIconEl = this.addRibbonIcon(
       "send",
-      "Publish to substack",
+      "Publish to Substack",
       () => {
         this.publishToSubstack();
-      },
+      }
     );
 
     ribbonIconEl.addClass("substack-ribbon-class");
@@ -118,7 +119,7 @@ export default class SubstackPublisherPlugin extends Plugin {
         "Publish to WordPress",
         () => {
           this.publishToWordPress();
-        },
+        }
       );
       wpRibbonIconEl.addClass("wordpress-ribbon-class");
 
@@ -137,7 +138,7 @@ export default class SubstackPublisherPlugin extends Plugin {
         "Publish to LinkedIn",
         () => {
           this.publishToLinkedIn();
-        },
+        }
       );
       liRibbonIconEl.addClass("linkedin-ribbon-class");
 
@@ -158,10 +159,10 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     this.addCommand({
       id: "publish-to-substack",
-      name: "Publish to substack",
+      name: "Publish to Substack",
       callback: () => {
         this.publishToSubstack();
-      },
+      }
     });
 
     this.addCommand({
@@ -169,7 +170,7 @@ export default class SubstackPublisherPlugin extends Plugin {
       name: "Publish to WordPress",
       callback: () => {
         this.publishToWordPress();
-      },
+      }
     });
 
     this.addCommand({
@@ -177,7 +178,7 @@ export default class SubstackPublisherPlugin extends Plugin {
       name: "Publish to LinkedIn",
       callback: () => {
         this.publishToLinkedIn();
-      },
+      }
     });
 
     this.addCommand({
@@ -185,7 +186,7 @@ export default class SubstackPublisherPlugin extends Plugin {
       name: "Republier tous les articles du blog",
       callback: () => {
         this.republishAllArticles();
-      },
+      }
     });
 
     // Context menu: restart editorial pipeline
@@ -194,7 +195,7 @@ export default class SubstackPublisherPlugin extends Plugin {
         if (file instanceof TFile && file.extension === "md") {
           menu.addItem((item) => {
             item
-              .setTitle("(Re)lancer le pipeline éditorial")
+              .setTitle("(re)lancer le pipeline éditorial")
               .setIcon("refresh-cw")
               .onClick(() => this.restartPipeline(file));
           });
@@ -203,7 +204,7 @@ export default class SubstackPublisherPlugin extends Plugin {
         if (file instanceof TFolder && this.settings.wordpressEnabled) {
           menu.addItem((item) => {
             item
-              .setTitle("(Re)publier le répertoire sur WP")
+              .setTitle("(re)publier le répertoire sur WP")
               .setIcon("upload")
               .onClick(() => this.batchPublishFolder(file));
           });
@@ -233,7 +234,7 @@ export default class SubstackPublisherPlugin extends Plugin {
         username: this.settings.wordpressUsername,
         password: this.settings.wordpressPassword,
         categoryPageIds: this.settings.wordpressCategoryPageIds,
-        defaultCategory: this.settings.wordpressDefaultCategory,
+        defaultCategory: this.settings.wordpressDefaultCategory
       };
       this.settings.wordpressServers = [legacyServer];
       this.settings.wordpressDefaultServerId = "legacy";
@@ -250,7 +251,7 @@ export default class SubstackPublisherPlugin extends Plugin {
       this.logger = createLogger(
         "Content Publisher",
         this.settings.devMode,
-        this.settings.logLevel,
+        this.settings.logLevel
       );
     }
   }
@@ -262,7 +263,7 @@ export default class SubstackPublisherPlugin extends Plugin {
       this.logger = createLogger(
         "Content Publisher",
         this.settings.devMode,
-        this.settings.logLevel,
+        this.settings.logLevel
       );
     }
   }
@@ -272,14 +273,14 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     if (!this.settings.substackCookie) {
       new Notice(
-        "Please configure your substack authentication in settings first.",
+        "Please configure your Substack authentication in settings first."
       );
       return;
     }
 
     if (this.settings.publications.length === 0) {
       new Notice(
-        "Please click 'refresh' in settings to fetch your publications.",
+        "Please click 'refresh' in settings to fetch your publications."
       );
       return;
     }
@@ -304,8 +305,8 @@ export default class SubstackPublisherPlugin extends Plugin {
         onWordPressLinkPreferenceChange: (value: boolean) => {
           this.settings.defaultAddWordPressLink = value;
           void this.saveSettings();
-        },
-      },
+        }
+      }
     );
     composer.open();
   }
@@ -332,7 +333,7 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     const composer = new WordPressPostComposer(this.app, this.logger, {
       servers: this.settings.wordpressServers,
-      defaultServerId: this.settings.wordpressDefaultServerId,
+      defaultServerId: this.settings.wordpressDefaultServerId
     });
     composer.open();
   }
@@ -351,17 +352,17 @@ export default class SubstackPublisherPlugin extends Plugin {
     }
 
     if (!this.settings.linkedinPersonId) {
-      new Notice("Please configure your LinkedIn Person ID in settings.");
+      new Notice("Please configure your LinkedIn person ID in settings.");
       return;
     }
 
     const api = new LinkedInAPI(
       this.settings.linkedinAccessToken,
-      this.settings.linkedinPersonId,
+      this.settings.linkedinPersonId
     );
 
     const composer = new LinkedInPostComposer(this.app, api, this.logger, {
-      defaultVisibility: this.settings.linkedinDefaultVisibility,
+      defaultVisibility: this.settings.linkedinDefaultVisibility
     });
     composer.open();
   }
@@ -378,7 +379,7 @@ export default class SubstackPublisherPlugin extends Plugin {
    */
   getDefaultWordPressServer(): WordPressServer | undefined {
     return this.settings.wordpressServers.find(
-      (s) => s.id === this.settings.wordpressDefaultServerId,
+      (s) => s.id === this.settings.wordpressDefaultServerId
     );
   }
 
@@ -399,9 +400,9 @@ export default class SubstackPublisherPlugin extends Plugin {
   private async isNotebookInMCP(uuid: string): Promise<boolean> {
     const MCP_URL = "http://localhost:3000";
     try {
-      const response = await fetch(`${MCP_URL}/notebooks`);
-      if (!response.ok) return false;
-      const result = await response.json();
+      const response = await requestUrl({ url: `${MCP_URL}/notebooks`, throw: false });
+      if (response.status < 200 || response.status >= 300) return false;
+      const result = response.json;
       if (!result.success || !result.data?.notebooks) return false;
       return result.data.notebooks.some((n: { url?: string }) => n.url?.includes(uuid));
     } catch {
@@ -471,15 +472,17 @@ export default class SubstackPublisherPlugin extends Plugin {
     try {
       new Notice("Enregistrement du notebook...", 3000);
 
-      const mcpResponse = await fetch(`${MCP_URL}/notebooks/auto-discover`, {
+      const mcpResponse = await requestUrl({
+        url: `${MCP_URL}/notebooks/auto-discover`,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ url }),
+        throw: false
       });
 
-      const mcpResult = await mcpResponse.json();
+      const mcpResult = mcpResponse.json;
 
-      if (!mcpResponse.ok || mcpResult.error) {
+      if (mcpResponse.status < 200 || mcpResponse.status >= 300 || mcpResult.error) {
         const errorMsg = mcpResult.error || mcpResult.message || "Erreur inconnue";
         this.logger.warn("MCP auto-discover failed", { error: errorMsg });
 
@@ -531,7 +534,7 @@ export default class SubstackPublisherPlugin extends Plugin {
       config.notebooks[id] = { uuid, name, description: description || id };
 
       const newJson = JSON.stringify(config, null, 2);
-      configContent = configContent.replace(/```json\n[\s\S]*?\n```/, "```json\n" + newJson + "\n```");
+      configContent = configContent.replace(/```json\n[\s\S]*?\n```/, `\`\`\`json\n${  newJson  }\n\`\`\``);
       await this.app.vault.modify(configFile, configContent);
     } catch (e) {
       this.logger.error("Failed to update config.md", e);
@@ -550,20 +553,22 @@ export default class SubstackPublisherPlugin extends Plugin {
     try {
       new Notice("Découverte du notebook...", 3000);
 
-      const mcpResponse = await fetch(`${MCP_URL}/notebooks/auto-discover`, {
+      const mcpResponse = await requestUrl({
+        url: `${MCP_URL}/notebooks/auto-discover`,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ url }),
+        throw: false
       });
 
-      const mcpResult = await mcpResponse.json();
+      const mcpResult = mcpResponse.json;
 
-      if (!mcpResponse.ok || mcpResult.error) {
+      if (mcpResponse.status < 200 || mcpResponse.status >= 300 || mcpResult.error) {
         const errorMsg = mcpResult.error || mcpResult.message || "Erreur inconnue";
         if (errorMsg.includes("access") || errorMsg.includes("inaccessible") || errorMsg.includes("permission")) {
-          new Notice(`⚠️ Le compte MCP n'a pas accès à ce notebook.\nPartagez-le avec le compte du MCP.`, 8000);
+          new Notice("⚠️ le compte MCP n'a pas accès à ce notebook.\\npartagez-le avec le compte du MCP.", 8000);
         } else if (errorMsg.includes("not found") || errorMsg.includes("doesn't exist")) {
-          new Notice(`⚠️ Notebook non trouvé. Vérifiez l'URL.`, 5000);
+          new Notice("⚠️ notebook non trouvé. Vérifiez l'URL.", 5000);
         } else {
           new Notice(`⚠️ MCP: ${errorMsg.substring(0, 100)}`, 5000);
         }
@@ -578,7 +583,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     } catch (mcpError) {
       const errorMsg = mcpError instanceof Error ? mcpError.message : String(mcpError);
       if (errorMsg.includes("fetch") || errorMsg.includes("ECONNREFUSED")) {
-        new Notice(`⚠️ MCP NotebookLM non démarré (localhost:3000)`, 5000);
+        new Notice("⚠️ MCP NotebookLM non démarré (localhost:3000)", 5000);
       } else {
         new Notice(`⚠️ MCP: ${errorMsg}`, 5000);
       }
@@ -615,13 +620,13 @@ export default class SubstackPublisherPlugin extends Plugin {
 
       // Add the new notebook with auto-discovered metadata
       config.notebooks[id] = {
-        uuid: uuid,
+        uuid,
         name: notebook.name,
         description: notebook.description || id
       };
 
       const newJson = JSON.stringify(config, null, 2);
-      configContent = configContent.replace(/```json\n[\s\S]*?\n```/, "```json\n" + newJson + "\n```");
+      configContent = configContent.replace(/```json\n[\s\S]*?\n```/, `\`\`\`json\n${  newJson  }\n\`\`\``);
 
       await this.app.vault.modify(configFile, configContent);
       this.logger.info("Notebook added to config", { id, name: notebook.name, uuid });
@@ -810,10 +815,10 @@ export default class SubstackPublisherPlugin extends Plugin {
           // Normalize: lowercase, no accents, alphanumeric only
           notebookSubfolder = notebookMatch[1].trim()
             .toLowerCase()
-            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-            .replace(/[^a-z0-9-]/g, '-')
-            .replace(/-+/g, '-')
-            .replace(/^-|-$/g, '');
+            .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-z0-9-]/g, "-")
+            .replace(/-+/g, "-")
+            .replace(/^-|-$/g, "");
         }
       }
 
@@ -924,11 +929,11 @@ export default class SubstackPublisherPlugin extends Plugin {
     // Create ONE persistent notice with all articles listed
     const noticeFragment = document.createDocumentFragment();
     const noticeContainer = document.createElement("div");
-    noticeContainer.style.cssText = "max-height: 400px; overflow-y: auto;";
+    noticeContainer.classList.add("batch-notice-container");
 
     // Header
     const header = document.createElement("div");
-    header.style.cssText = "font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid var(--text-muted); padding-bottom: 4px;";
+    header.classList.add("batch-notice-header");
     header.textContent = `Publication de ${mdFiles.length} articles ${folder.name}`;
     noticeContainer.appendChild(header);
 
@@ -936,7 +941,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     const articleLines: Map<string, HTMLSpanElement> = new Map();
     for (const file of mdFiles) {
       const line = document.createElement("div");
-      line.style.cssText = "padding: 2px 0;";
+      line.classList.add("batch-notice-line");
       const statusSpan = document.createElement("span");
       statusSpan.textContent = `📄 ${file.basename}`;
       line.appendChild(statusSpan);
@@ -1071,17 +1076,17 @@ export default class SubstackPublisherPlugin extends Plugin {
     // Create ONE persistent notice with all articles listed
     const noticeFragment = document.createDocumentFragment();
     const noticeContainer = document.createElement("div");
-    noticeContainer.style.cssText = "max-height: 400px; overflow-y: auto;";
+    noticeContainer.classList.add("batch-notice-container");
 
     const header = document.createElement("div");
-    header.style.cssText = "font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid var(--text-muted); padding-bottom: 4px;";
+    header.classList.add("batch-notice-header");
     header.textContent = `Republication de ${matchingFiles.length} articles — ${server.name}`;
     noticeContainer.appendChild(header);
 
     const articleLines: Map<string, HTMLSpanElement> = new Map();
     for (const file of matchingFiles) {
       const line = document.createElement("div");
-      line.style.cssText = "padding: 2px 0;";
+      line.classList.add("batch-notice-line");
       const statusSpan = document.createElement("span");
       statusSpan.textContent = `📄 ${file.basename}`;
       line.appendChild(statusSpan);
@@ -1199,7 +1204,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     }
 
     // Convert markdown to HTML (full conversion)
-    let html = convertMarkdownToHtml(content);
+    const html = convertMarkdownToHtml(content);
 
     // Extract illustration (first image after H1)
     const { illustration, content: htmlWithoutIllustration } = this.extractIllustrationForBatch(html);
@@ -1380,15 +1385,6 @@ interface PipelineConfig {
 }
 
 /**
- * Notebook configuration from config.md
- */
-interface NotebookEntry {
-  uuid: string;
-  name: string;
-  description?: string;
-}
-
-/**
  * Modal for entering a new notebook URL
  */
 class NewNotebookModal extends Modal {
@@ -1555,12 +1551,12 @@ class PipelineConfigModal extends Modal {
       notebookSection.createEl("h4", { text: "Notebook (références NotebookLM)" });
 
       const notebookSelect = notebookSection.createEl("select", { cls: "config-select" });
-      notebookSelect.createEl("option", { text: "-- Sélectionner --", value: "" });
+      notebookSelect.createEl("option", { text: "-- sélectionner --", value: "" });
 
       for (const nb of this.availableNotebooks) {
         notebookSelect.createEl("option", { text: nb.name, value: nb.id });
       }
-      notebookSelect.createEl("option", { text: "── Sans NotebookLM ──", value: "", attr: { disabled: "true" } });
+      notebookSelect.createEl("option", { text: "── sans NotebookLM ──", value: "", attr: { disabled: "true" } });
       notebookSelect.createEl("option", { text: "Regards", value: "_regards" });
       notebookSelect.createEl("option", { text: "Psycho", value: "_psycho" });
       notebookSelect.createEl("option", { text: "Autre", value: "_autre" });
@@ -1572,7 +1568,7 @@ class PipelineConfigModal extends Modal {
 
       // Custom notebook input
       const customNotebookDiv = notebookSection.createDiv({ cls: "config-custom" });
-      customNotebookDiv.createEl("span", { text: "ou nouveau : " });
+      customNotebookDiv.createEl("span", { text: "Ou nouveau : " });
       this.customNotebookInput = customNotebookDiv.createEl("input", {
         type: "text",
         placeholder: "nom du notebook",
@@ -1592,7 +1588,7 @@ class PipelineConfigModal extends Modal {
       categorieSection.createEl("h4", { text: "Catégorie (style d'écriture)" });
 
       const categorieSelect = categorieSection.createEl("select", { cls: "config-select" });
-      categorieSelect.createEl("option", { text: "-- Sélectionner --", value: "" });
+      categorieSelect.createEl("option", { text: "-- sélectionner --", value: "" });
 
       for (const cat of this.availableCategories) {
         categorieSelect.createEl("option", { text: cat, value: cat });
@@ -1604,7 +1600,7 @@ class PipelineConfigModal extends Modal {
 
       // Custom category input
       const customCatDiv = categorieSection.createDiv({ cls: "config-custom" });
-      customCatDiv.createEl("span", { text: "ou nouvelle : " });
+      customCatDiv.createEl("span", { text: "Ou nouvelle : " });
       this.customCategorieInput = customCatDiv.createEl("input", {
         type: "text",
         placeholder: "nom de la catégorie",
@@ -1678,12 +1674,12 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       new Setting(containerEl)
         .setName("Login")
         .setDesc(
-          `${authStatus}. Click to open Substack login window and automatically capture your session`,
+          `${authStatus}. Click to open Substack login window and automatically capture your session`
         )
         .addButton((button) => {
           button
             .setButtonText(
-              this.plugin.settings.substackCookie ? "Re-login" : "Login",
+              this.plugin.settings.substackCookie ? "Re-login" : "Login"
             )
             .setCta()
             .onClick(() => {
@@ -1704,7 +1700,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       .setDesc(
         Platform.isDesktop
           ? "Alternative: paste your cookie manually if auto-login doesn't work"
-          : "Paste your Substack session cookie (substack.sid) from browser DevTools → Application → Cookies",
+          : "Paste your Substack session cookie (substack.sid) from browser DevTools → Application → Cookies"
       )
       .addText((text) => {
         text
@@ -1726,8 +1722,8 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
 
     // Refresh button to fetch publications and sections
     new Setting(containerEl)
-      .setName("Refresh from substack")
-      .setDesc("Fetch your publications and sections from substack")
+      .setName("Refresh from Substack")
+      .setDesc("Fetch your publications and sections from Substack")
       .addButton((button) => {
         button.setButtonText("↻ refresh").onClick(async () => {
           if (!this.plugin.settings.substackCookie) {
@@ -1745,14 +1741,14 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
             const publicationsInfo = await api.getUserPublicationsWithInfo();
             if (publicationsInfo.length > 0) {
               this.plugin.settings.publications = publicationsInfo.map(
-                (p) => p.subdomain,
+                (p) => p.subdomain
               );
 
               // Auto-detect paid subscriptions for the default publication
               const defaultPubInfo =
                 publicationsInfo.find(
                   (p) =>
-                    p.subdomain === this.plugin.settings.defaultPublication,
+                    p.subdomain === this.plugin.settings.defaultPublication
                 ) || publicationsInfo[0];
 
               if (defaultPubInfo) {
@@ -1764,7 +1760,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
               if (
                 !this.plugin.settings.defaultPublication ||
                 !this.plugin.settings.publications.includes(
-                  this.plugin.settings.defaultPublication,
+                  this.plugin.settings.defaultPublication
                 )
               ) {
                 this.plugin.settings.defaultPublication =
@@ -1775,7 +1771,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
             // Fetch sections for default publication
             if (this.plugin.settings.defaultPublication) {
               const sections = await api.getSections(
-                this.plugin.settings.defaultPublication,
+                this.plugin.settings.defaultPublication
               );
               this.plugin.settings.sections = sections;
               // Set default section if not set or invalid
@@ -1799,7 +1795,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
               ? "paid enabled"
               : "free only";
             new Notice(
-              `Refreshed: ${this.plugin.settings.publications.length} publication(s), ${this.plugin.settings.sections.length} section(s), ${paidStatus}`,
+              `Refreshed: ${this.plugin.settings.publications.length} publication(s), ${this.plugin.settings.sections.length} section(s), ${paidStatus}`
             );
           } catch (error) {
             const msg =
@@ -1818,7 +1814,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       .setDesc(
         this.plugin.settings.publications.length === 0
           ? "Click 'refresh' above to load your publications"
-          : "Publication used by default when publishing",
+          : "Publication used by default when publishing"
       );
 
     if (this.plugin.settings.publications.length > 0) {
@@ -1834,7 +1830,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
             const api = new SubstackAPI(this.plugin.settings.substackCookie);
             this.plugin.settings.sections = await api.getSections(value);
             const firstLive = this.plugin.settings.sections.find(
-              (s) => s.is_live,
+              (s) => s.is_live
             );
             this.plugin.settings.defaultSectionId = firstLive?.id ?? null;
           }
@@ -1851,7 +1847,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       .setDesc(
         liveSections.length === 0
           ? "Click 'refresh' above to load your sections"
-          : "Section used by default when publishing",
+          : "Section used by default when publishing"
       );
 
     if (liveSections.length > 0) {
@@ -1860,7 +1856,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
           dropdown.addOption(section.id.toString(), section.name);
         }
         dropdown.setValue(
-          this.plugin.settings.defaultSectionId?.toString() || "",
+          this.plugin.settings.defaultSectionId?.toString() || ""
         );
         dropdown.onChange(async (value) => {
           this.plugin.settings.defaultSectionId = value
@@ -1874,7 +1870,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
     // Paid subscribers toggle (informational, auto-detected)
     new Setting(containerEl)
       .setName("Paid subscribers enabled")
-      .setDesc("Auto-detected from substack. Toggle manually if incorrect.")
+      .setDesc("Auto-detected from Substack. Toggle manually if incorrect.")
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.paidSubscribersEnabled)
@@ -1886,7 +1882,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
             }
             await this.plugin.saveSettings();
             this.display(); // Refresh to update audience options
-          }),
+          })
       );
 
     // Default Audience dropdown - only show if paid subscribers enabled
@@ -1927,14 +1923,14 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
     // Add WordPress link in footer (default)
     new Setting(containerEl)
       .setName("Add WordPress link by default")
-      .setDesc("When enabled, the WordPress link checkbox will be checked by default (if wordpress_url exists in frontmatter)")
+      .setDesc("When enabled, the WordPress link checkbox will be checked by default (if WordPress_URL exists in frontmatter)")
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.defaultAddWordPressLink)
           .onChange(async (value) => {
             this.plugin.settings.defaultAddWordPressLink = value;
             await this.plugin.saveSettings();
-          }),
+          })
       );
 
     // WordPress Section
@@ -1952,10 +1948,10 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
             new Notice(
               value
                 ? "WordPress enabled. Reload Obsidian to see the ribbon button."
-                : "WordPress disabled.",
+                : "WordPress disabled."
             );
             this.display();
-          }),
+          })
       );
 
     if (this.plugin.settings.wordpressEnabled) {
@@ -1982,7 +1978,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
         .setName("Add server")
         .setDesc("Add a new WordPress server configuration")
         .addButton((button) => {
-          button.setButtonText("+ Add server").onClick(() => {
+          button.setButtonText("+ add server").onClick(() => {
             const newServer: WordPressServer = {
               id: `server-${Date.now()}`,
               name: `WordPress ${servers.length + 1}`,
@@ -1990,7 +1986,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
               username: "",
               password: "",
               categoryPageIds: {},
-              defaultCategory: "",
+              defaultCategory: ""
             };
             this.plugin.settings.wordpressServers.push(newServer);
             if (servers.length === 0) {
@@ -2074,21 +2070,21 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
             new Notice(
               value
                 ? "LinkedIn enabled. Reload Obsidian to see the ribbon button."
-                : "LinkedIn disabled.",
+                : "LinkedIn disabled."
             );
             this.display();
-          }),
+          })
       );
 
     // Setup instructions - always visible so users know how to get credentials
     new Setting(containerEl)
-      .setName("Step 1: Create LinkedIn app")
-      .setDesc("Create an app (requires a Company Page - create an empty one if needed)")
+      .setName("Step 1: create LinkedIn app")
+      .setDesc("Create an app (requires a company page - create an empty one if needed)")
       .addButton((btn) => btn
-        .setButtonText("Open LinkedIn Developer Portal")
+        .setButtonText("Open LinkedIn developer portal")
         .onClick(() => {
           // Use child_process to open in true system default browser
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
+
           const { exec } = require("child_process");
           if (Platform.isWin) {
             exec('start "" "https://www.linkedin.com/developers/apps"');
@@ -2100,30 +2096,30 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName("Step 2: Request API access")
-      .setDesc("In 'Products' tab, request 'Share on LinkedIn' and 'Sign In with LinkedIn using OpenID Connect'");
+      .setName("Step 2: request API access")
+      .setDesc("In 'products' tab, request 'share on LinkedIn' and 'sign in with LinkedIn using OpenID Connect'");
 
     new Setting(containerEl)
-      .setName("Step 3: Add redirect URL")
-      .setDesc("In 'Auth' tab, add this redirect URL (select and copy):")
+      .setName("Step 3: add redirect URL")
+      .setDesc("In 'auth' tab, add this redirect URL (select and copy):")
       .addText((text) => {
         text.setValue("https://oauth.pstmn.io/v1/callback");
         text.inputEl.readOnly = true;
         text.inputEl.addClass("substack-input-full-width");
-        text.inputEl.style.cursor = "text";
+        text.inputEl.addClass("settings-cursor-text");
       });
 
     new Setting(containerEl)
-      .setName("Step 4: Note credentials")
-      .setDesc("Copy your Client ID and Client Secret from the 'Auth' tab");
+      .setName("Step 4: note credentials")
+      .setDesc("Copy your client ID and client secret from the 'auth' tab");
 
     new Setting(containerEl)
-      .setName("Step 5: Get access token with Postman")
-      .setDesc("In Postman: New → HTTP, then go to 'Auth' tab, select Type 'OAuth 2.0', fill in the fields below:")
+      .setName("Step 5: get access token with Postman")
+      .setDesc("In Postman: new → HTTP, then go to 'auth' tab, select type 'OAuth 2.0', fill in the fields below:")
       .addButton((btn) => btn
         .setButtonText("Download Postman")
         .onClick(() => {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
+
           const { exec } = require("child_process");
           if (Platform.isWin) {
             exec('start "" "https://www.postman.com/downloads/"');
@@ -2143,7 +2139,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Access Token URL (copy to Postman)")
+      .setName("Access token URL (copy to Postman)")
       .addText((text) => {
         text.setValue("https://www.linkedin.com/oauth/v2/accessToken");
         text.inputEl.readOnly = true;
@@ -2167,16 +2163,16 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Client Authentication (important!)")
-      .setDesc("In Postman OAuth 2.0 config, set 'Client Authentication' to 'Send client credentials in body' (not header)");
+      .setName("Client authentication (important!)")
+      .setDesc("In Postman OAuth 2.0 config, set 'client authentication' to 'send client credentials in body' (not header)");
 
     new Setting(containerEl)
-      .setName("Step 6: Complete OAuth")
-      .setDesc("Enter Client ID & Secret, click 'Get New Access Token', login to LinkedIn, authorize. Then click 'Use Token' and copy the Access Token value.");
+      .setName("Step 6: complete OAuth")
+      .setDesc("Enter client ID & secret, click 'get new access token', login to LinkedIn, authorize. Then click 'use token' and copy the access token value.");
 
     new Setting(containerEl)
-      .setName("Step 7: Get Person ID (different from Client ID!)")
-      .setDesc("New → HTTP GET request. In 'Auth' tab: Type 'Bearer Token', paste your access token. Send request, copy the 'sub' value (NOT Client ID).")
+      .setName("Step 7: get person ID (different from client ID!)")
+      .setDesc("New → HTTP GET request. In 'auth' tab: type 'bearer token', paste your access token. Send request, copy the 'sub' value (not client ID).")
       .addText((text) => {
         text.setValue("https://api.linkedin.com/v2/userinfo");
         text.inputEl.readOnly = true;
@@ -2192,7 +2188,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
         .setDesc(tokenDesc)
         .addText((text) => {
           text
-            .setPlaceholder("AQV...")
+            .setPlaceholder("Aqv...")
             .setValue(this.plugin.settings.linkedinAccessToken)
             .onChange(async (value) => {
               this.plugin.settings.linkedinAccessToken = value;
@@ -2210,7 +2206,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
         .setDesc(personIdDesc)
         .addText((text) => {
           text
-            .setPlaceholder("abc123XYZ")
+            .setPlaceholder("Abc123xyz")
             .setValue(this.plugin.settings.linkedinPersonId)
             .onChange(async (value) => {
               this.plugin.settings.linkedinPersonId = value;
@@ -2247,7 +2243,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
             try {
               const api = new LinkedInAPI(
                 this.plugin.settings.linkedinAccessToken,
-                this.plugin.settings.linkedinPersonId,
+                this.plugin.settings.linkedinPersonId
               );
               const result = await api.testConnection();
               if (result.success && result.data) {
@@ -2276,7 +2272,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Dev mode")
       .setDesc(
-        "Enable detailed logging for debugging. Only enable when troubleshooting issues.",
+        "Enable detailed logging for debugging. Only enable when troubleshooting issues."
       )
       .addToggle((toggle) =>
         toggle
@@ -2291,7 +2287,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
             new Notice(`dev mode ${status}. ${message}`);
 
             this.display();
-          }),
+          })
       );
 
     if (this.plugin.settings.devMode) {
@@ -2312,7 +2308,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
               if (this.plugin.logger && "setLogLevel" in this.plugin.logger) {
                 this.plugin.logger.setLogLevel(this.plugin.settings.logLevel);
               }
-            }),
+            })
         );
     }
 
@@ -2321,23 +2317,23 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
     versionSection.addClass("substack-version-wrapper");
 
     const versionContent = versionSection.createEl("div", {
-      attr: { class: "substack-version-content" },
+      attr: { class: "substack-version-content" }
     });
 
     versionContent.createEl("p", {
-      text: "Content Publisher",
-      attr: { class: "substack-version-name" },
+      text: "Content publisher",
+      attr: { class: "substack-version-name" }
     });
 
     versionContent.createEl("a", {
       text: "Roomi-fields",
       href: "https://github.com/roomi-fields",
-      attr: { class: "substack-version-author" },
+      attr: { class: "substack-version-author" }
     });
 
     versionContent.createEl("span", {
       text: `v${this.plugin.manifest.version}`,
-      attr: { class: "substack-version-number" },
+      attr: { class: "substack-version-number" }
     });
   }
 
@@ -2348,14 +2344,14 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       async (updatedServer) => {
         // Update the server in the list
         const index = this.plugin.settings.wordpressServers.findIndex(
-          (s) => s.id === updatedServer.id,
+          (s) => s.id === updatedServer.id
         );
         if (index !== -1) {
           this.plugin.settings.wordpressServers[index] = updatedServer;
           await this.plugin.saveSettings();
           this.display();
         }
-      },
+      }
     );
     modal.open();
   }
@@ -2397,15 +2393,11 @@ class BatchPublishConfirmModal extends Modal {
     });
 
     contentEl.createEl("p", {
-      text: "⚠️ Les mises à jour de backlinks sont désactivées pendant le batch pour éviter les doublons.",
+      text: "⚠️ les mises à jour de backlinks sont désactivées pendant le batch pour éviter les doublons.",
       cls: "batch-publish-warning"
     });
 
     const buttonsDiv = contentEl.createDiv({ cls: "batch-publish-buttons" });
-    buttonsDiv.style.display = "flex";
-    buttonsDiv.style.gap = "10px";
-    buttonsDiv.style.justifyContent = "flex-end";
-    buttonsDiv.style.marginTop = "20px";
 
     const cancelBtn = buttonsDiv.createEl("button", { text: "Annuler" });
     cancelBtn.addEventListener("click", () => {
@@ -2438,7 +2430,7 @@ class WordPressServerEditModal extends Modal {
   constructor(
     app: App,
     server: WordPressServer,
-    onSave: (server: WordPressServer) => Promise<void>,
+    onSave: (server: WordPressServer) => Promise<void>
   ) {
     super(app);
     this.server = server;
@@ -2450,7 +2442,7 @@ class WordPressServerEditModal extends Modal {
   override onOpen() {
     const { contentEl } = this;
 
-    contentEl.createEl("h2", { text: "Edit WordPress Server" });
+    contentEl.createEl("h2", { text: "Edit WordPress server" });
 
     new Setting(contentEl)
       .setName("Server name")
@@ -2482,7 +2474,7 @@ class WordPressServerEditModal extends Modal {
       .setDesc("WordPress username")
       .addText((text) => {
         text
-          .setPlaceholder("username")
+          .setPlaceholder("Username")
           .setValue(this.editedServer.username)
           .onChange((value) => {
             this.editedServer.username = value;
@@ -2494,7 +2486,7 @@ class WordPressServerEditModal extends Modal {
       .setDesc("WordPress application password (not your login password)")
       .addText((text) => {
         text
-          .setPlaceholder("xxxx xxxx xxxx xxxx")
+          .setPlaceholder("Xxxx xxxx xxxx xxxx")
           .setValue(this.editedServer.password)
           .onChange((value) => {
             this.editedServer.password = value;
@@ -2507,7 +2499,7 @@ class WordPressServerEditModal extends Modal {
       .setDesc("Category used by default when publishing")
       .addText((text) => {
         text
-          .setPlaceholder("category-name")
+          .setPlaceholder("Category-name")
           .setValue(this.editedServer.defaultCategory)
           .onChange((value) => {
             this.editedServer.defaultCategory = value;
@@ -2524,7 +2516,7 @@ class WordPressServerEditModal extends Modal {
 
     const categoryTextArea = categoryContainer.createEl("textarea", {
       cls: "wordpress-category-textarea",
-      attr: { rows: "4", cols: "40", placeholder: '{"category": 123}' },
+      attr: { rows: "4", cols: "40", placeholder: '{"category": 123}' }
     });
     categoryTextArea.value = JSON.stringify(this.editedServer.categoryPageIds, null, 2);
     categoryTextArea.addEventListener("change", () => {
@@ -2547,7 +2539,7 @@ class WordPressServerEditModal extends Modal {
           const api = new WordPressAPI(
             this.editedServer.baseUrl,
             this.editedServer.username,
-            this.editedServer.password,
+            this.editedServer.password
           );
           const categories = await api.getCategories();
           if (categories.success && categories.data) {
@@ -2582,7 +2574,7 @@ class WordPressServerEditModal extends Modal {
     });
 
     // Polylang multilingual support section
-    contentEl.createEl("h3", { text: "Polylang (Multilingual)" });
+    contentEl.createEl("h3", { text: "Polylang (multilingual)" });
 
     // Initialize polylang config if not present
     if (!this.editedServer.polylang) {
@@ -2615,7 +2607,7 @@ class WordPressServerEditModal extends Modal {
 
     const polylangTextArea = polylangContainer.createEl("textarea", {
       cls: "wordpress-category-textarea",
-      attr: { rows: "4", cols: "40", placeholder: '{"news": {"fr": 2, "en": 17}}' },
+      attr: { rows: "4", cols: "40", placeholder: '{"news": {"fr": 2, "en": 17}}' }
     });
     polylangTextArea.value = JSON.stringify(
       this.editedServer.polylang?.categoryMapping ?? {},

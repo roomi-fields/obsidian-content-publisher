@@ -130,7 +130,11 @@ export class WordPressPostComposer extends Modal {
     }
   }
 
-  override async onOpen() {
+  override onOpen() {
+    void this.initializeModal();
+  }
+
+  private async initializeModal(): Promise<void> {
     const { contentEl } = this;
 
     // Get active file and read frontmatter
@@ -170,19 +174,16 @@ export class WordPressPostComposer extends Modal {
     if (this.currentServer.polylang?.enabled && !this.isBilingual) {
       if (this.hasEnglishVersion) {
         // Info: EN version will be published too
-        const infoDiv = contentEl.createDiv({ cls: "wordpress-info" });
+        const infoDiv = contentEl.createDiv({ cls: "wordpress-info-banner" });
         infoDiv.createEl("span", {
-          // eslint-disable-next-line obsidianmd/ui/sentence-case
-          text: "🇬🇧 Version anglaise détectée dans _en/ — sera publiée automatiquement"
+          text: "🇬🇧 version anglaise détectée dans _EN/ — sera publiée automatiquement"
         });
-        infoDiv.style.cssText = "background: #d4edda; color: #155724; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 13px;";
       } else {
         // Warning: No EN version
-        const warningDiv = contentEl.createDiv({ cls: "wordpress-warning" });
+        const warningDiv = contentEl.createDiv({ cls: "wordpress-warning-banner" });
         warningDiv.createEl("span", {
           text: `⚠️ Polylang activé mais pas de version anglaise (_en/${this.activeFile?.name || "fichier.md"})`
         });
-        warningDiv.style.cssText = "background: #fff3cd; color: #856404; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 13px;";
       }
     }
 
@@ -361,12 +362,8 @@ export class WordPressPostComposer extends Modal {
     const isUpdate = this.existingPostId || this.existingPageId;
     if (isUpdate) {
       const dateOptionContainer = contentEl.createDiv({
-        cls: "wordpress-date-option"
+        cls: "wordpress-date-option wordpress-option-container"
       });
-      dateOptionContainer.style.marginTop = "12px";
-      dateOptionContainer.style.display = "flex";
-      dateOptionContainer.style.alignItems = "center";
-      dateOptionContainer.style.gap = "8px";
       const dateCheckbox = dateOptionContainer.createEl("input", {
         type: "checkbox",
         attr: { id: "update-date-checkbox" }
@@ -383,12 +380,8 @@ export class WordPressPostComposer extends Modal {
     // Show "move article after publish" checkbox if articleOrganization is configured
     if (this.currentServer.articleOrganization?.enabled) {
       const moveOptionContainer = contentEl.createDiv({
-        cls: "wordpress-move-option"
+        cls: "wordpress-move-option wordpress-option-container"
       });
-      moveOptionContainer.style.marginTop = "12px";
-      moveOptionContainer.style.display = "flex";
-      moveOptionContainer.style.alignItems = "center";
-      moveOptionContainer.style.gap = "8px";
       const moveCheckbox = moveOptionContainer.createEl("input", {
         type: "checkbox",
         attr: { id: "move-article-checkbox" }
@@ -511,9 +504,9 @@ export class WordPressPostComposer extends Modal {
       : this.contentType;
 
     if (effectiveType === "page") {
-      this.categoryContainerEl.style.display = "none";
+      this.categoryContainerEl.classList.add("wordpress-category-hidden");
     } else {
-      this.categoryContainerEl.style.display = "";
+      this.categoryContainerEl.classList.remove("wordpress-category-hidden");
     }
     this.logger.debug("Category visibility updated", { type: effectiveType });
   }
@@ -1391,7 +1384,7 @@ ${illustrationImg}
 
         if (hasPipelineSuffix) {
           try {
-            await this.app.vault.delete(file);
+            await this.app.fileManager.trashFile(file);
             this.logger.info(`Deleted pipeline file: ${file.path}`);
             deletedCount++;
           } catch (error) {

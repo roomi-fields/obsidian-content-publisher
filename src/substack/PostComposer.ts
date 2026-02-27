@@ -93,7 +93,11 @@ export class SubstackPostComposer extends Modal {
     }
   }
 
-  override async onOpen() {
+  override onOpen() {
+    void this.initializeModal();
+  }
+
+  private async initializeModal(): Promise<void> {
     const { contentEl } = this;
 
     // Get active file and read frontmatter
@@ -139,14 +143,11 @@ export class SubstackPostComposer extends Modal {
     const sectionContainer = contentEl.createDiv({
       cls: "substack-field-container substack-section-container"
     });
-    sectionContainer.style.display = "none"; // Hidden until sections loaded
+    sectionContainer.classList.add("substack-section-hidden"); // Hidden until sections loaded
 
     // Language selector (only for bilingual content)
-    // eslint-disable-next-line prefer-const
     let titleInput: HTMLInputElement;
-    // eslint-disable-next-line prefer-const
     let subtitleInput: HTMLInputElement;
-    // eslint-disable-next-line prefer-const
     let tagsInput: HTMLInputElement;
 
     if (this.isBilingual) {
@@ -544,7 +545,7 @@ export class SubstackPostComposer extends Modal {
 
       // Hide if no sections or only one
       if (liveSections.length <= 1) {
-        sectionContainer.style.display = "none";
+        sectionContainer.classList.add("substack-section-hidden");
         // If one section, use it as default
         if (liveSections.length === 1) {
           this.selectedSectionId = liveSections[0]?.id ?? null;
@@ -552,7 +553,7 @@ export class SubstackPostComposer extends Modal {
         return;
       }
 
-      sectionContainer.style.display = "block";
+      sectionContainer.classList.remove("substack-section-hidden");
       sectionContainer.empty();
 
       sectionContainer.createEl("label", { text: "Section" });

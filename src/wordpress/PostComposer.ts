@@ -176,7 +176,6 @@ export class WordPressPostComposer extends Modal {
         // Info: EN version will be published too
         const infoDiv = contentEl.createDiv({ cls: "wordpress-info-banner" });
         infoDiv.createEl("span", {
-          // eslint-disable-next-line obsidianmd/ui/sentence-case -- "English" is a proper noun
           text: "English version detected in _en/ — will be published automatically"
         });
       } else {

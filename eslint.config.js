@@ -32,6 +32,7 @@ export default [
         require: "readonly",
         global: "readonly",
         URL: "readonly",
+        URLSearchParams: "readonly",
         document: "readonly",
         Image: "readonly",
         Blob: "readonly",

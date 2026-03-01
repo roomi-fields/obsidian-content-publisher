@@ -1,4 +1,3 @@
-/* global HTMLTextAreaElement -- used by textarea element type */
 import { App, Modal, Notice, Setting, TFile } from "obsidian";
 import { LinkedInAPI } from "./api";
 import { LinkedInMarkdownConverter } from "./converter";

@@ -1,4 +1,3 @@
-/* global URLSearchParams -- used for query string construction */
 import { requestUrl, RequestUrlResponse } from "obsidian";
 import {
   WordPressPagePayload,

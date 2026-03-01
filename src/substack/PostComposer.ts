@@ -146,9 +146,8 @@ export class SubstackPostComposer extends Modal {
     sectionContainer.classList.add("substack-section-hidden"); // Hidden until sections loaded
 
     // Language selector (only for bilingual content)
-    let titleInput: HTMLInputElement;
-    let subtitleInput: HTMLInputElement;
-    let tagsInput: HTMLInputElement;
+    // Mutable refs populated after DOM creation, captured by event listeners
+    const inputRefs: { title?: HTMLInputElement; subtitle?: HTMLInputElement; tags?: HTMLInputElement } = {};
 
     if (this.isBilingual) {
       const langContainer = contentEl.createDiv({
@@ -177,7 +176,7 @@ export class SubstackPostComposer extends Modal {
       langSelect.addEventListener("change", () => {
         this.selectedLanguage = langSelect.value as PolylangLanguage;
         // Update fields with selected language content
-        this.updateFieldsForLanguage(titleInput, subtitleInput, tagsInput);
+        this.updateFieldsForLanguage(inputRefs.title!, inputRefs.subtitle!, inputRefs.tags!);
       });
     }
 
@@ -201,11 +200,12 @@ export class SubstackPostComposer extends Modal {
       cls: "substack-field-container"
     });
     titleContainer.createEl("label", { text: "Title" });
-    titleInput = titleContainer.createEl("input", {
+    const titleInput = titleContainer.createEl("input", {
       type: "text",
       placeholder: "Post title",
       cls: "substack-input"
     });
+    inputRefs.title = titleInput;
 
     // Pre-fill with bilingual content or frontmatter or file name
     if (this.isBilingual && this.bilingualContent) {
@@ -227,11 +227,12 @@ export class SubstackPostComposer extends Modal {
       cls: "substack-field-container"
     });
     subtitleContainer.createEl("label", { text: "Subtitle" });
-    subtitleInput = subtitleContainer.createEl("input", {
+    const subtitleInput = subtitleContainer.createEl("input", {
       type: "text",
       placeholder: "Post subtitle",
       cls: "substack-input"
     });
+    inputRefs.subtitle = subtitleInput;
 
     // Pre-fill with bilingual content or frontmatter
     if (this.isBilingual && this.bilingualContent) {
@@ -296,11 +297,12 @@ export class SubstackPostComposer extends Modal {
       cls: "substack-field-container"
     });
     tagsContainer.createEl("label", { text: "Tags" });
-    tagsInput = tagsContainer.createEl("input", {
+    const tagsInput = tagsContainer.createEl("input", {
       type: "text",
       placeholder: "tag1, tag2, tag3",
       cls: "substack-input"
     });
+    inputRefs.tags = tagsInput;
 
     // Pre-fill with bilingual content or frontmatter or defaults
     if (this.isBilingual && this.bilingualContent) {

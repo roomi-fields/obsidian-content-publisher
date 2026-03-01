@@ -183,9 +183,9 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     this.addCommand({
       id: "republish-all-articles",
-      name: "Republier tous les articles du blog",
+      name: "Republish all blog articles",
       callback: () => {
-        this.republishAllArticles();
+        void this.republishAllArticles();
       }
     });
 
@@ -195,7 +195,7 @@ export default class SubstackPublisherPlugin extends Plugin {
         if (file instanceof TFile && file.extension === "md") {
           menu.addItem((item) => {
             item
-              .setTitle("(re)lancer le pipeline éditorial")
+              .setTitle("Restart editorial pipeline")
               .setIcon("refresh-cw")
               .onClick(() => this.restartPipeline(file));
           });
@@ -204,7 +204,7 @@ export default class SubstackPublisherPlugin extends Plugin {
         if (file instanceof TFolder && this.settings.wordpressEnabled) {
           menu.addItem((item) => {
             item
-              .setTitle("(re)publier le répertoire sur WP")
+              .setTitle("Publish folder to WordPress")
               .setIcon("upload")
               .onClick(() => this.batchPublishFolder(file));
           });
@@ -483,14 +483,14 @@ export default class SubstackPublisherPlugin extends Plugin {
       const mcpResult = mcpResponse.json;
 
       if (mcpResponse.status < 200 || mcpResponse.status >= 300 || mcpResult.error) {
-        const errorMsg = mcpResult.error || mcpResult.message || "Erreur inconnue";
+        const errorMsg = mcpResult.error || mcpResult.message || "Unknown error";
         this.logger.warn("MCP auto-discover failed", { error: errorMsg });
 
         // Parse error type
         if (errorMsg.includes("access") || errorMsg.includes("inaccessible") || errorMsg.includes("permission")) {
-          return { success: false, error: "Le compte MCP n'a pas accès à ce notebook" };
+          return { success: false, error: "The MCP account does not have access to this notebook" };
         } else if (errorMsg.includes("not found") || errorMsg.includes("doesn't exist")) {
-          return { success: false, error: "Notebook non trouvé - vérifiez l'URL" };
+          return { success: false, error: "Notebook not found - check the URL" };
         } else {
           return { success: false, error: errorMsg.substring(0, 100) };
         }
@@ -508,7 +508,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     } catch (mcpError) {
       const errorMsg = mcpError instanceof Error ? mcpError.message : String(mcpError);
       if (errorMsg.includes("fetch") || errorMsg.includes("ECONNREFUSED")) {
-        return { success: false, error: "MCP NotebookLM non démarré (localhost:3000)" };
+        return { success: false, error: "MCP NotebookLM not started (localhost:3000)" };
       }
       return { success: false, error: errorMsg };
     }
@@ -551,7 +551,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     // 1. Use auto-discover to add notebook and get metadata
     let notebook: { name: string; description: string; url: string } | null = null;
     try {
-      new Notice("Découverte du notebook...", 3000);
+      new Notice("Discovering notebook...", 3000);
 
       const mcpResponse = await requestUrl({
         url: `${MCP_URL}/notebooks/auto-discover`,
@@ -564,11 +564,11 @@ export default class SubstackPublisherPlugin extends Plugin {
       const mcpResult = mcpResponse.json;
 
       if (mcpResponse.status < 200 || mcpResponse.status >= 300 || mcpResult.error) {
-        const errorMsg = mcpResult.error || mcpResult.message || "Erreur inconnue";
+        const errorMsg = mcpResult.error || mcpResult.message || "Unknown error";
         if (errorMsg.includes("access") || errorMsg.includes("inaccessible") || errorMsg.includes("permission")) {
-          new Notice("⚠️ le compte MCP n'a pas accès à ce notebook.\\npartagez-le avec le compte du MCP.", 8000);
+          new Notice("The MCP account does not have access to this notebook.\nShare it with the MCP account.", 8000);
         } else if (errorMsg.includes("not found") || errorMsg.includes("doesn't exist")) {
-          new Notice("⚠️ notebook non trouvé. Vérifiez l'URL.", 5000);
+          new Notice("Notebook not found. Check the URL.", 5000);
         } else {
           new Notice(`⚠️ MCP: ${errorMsg.substring(0, 100)}`, 5000);
         }
@@ -577,13 +577,13 @@ export default class SubstackPublisherPlugin extends Plugin {
       }
 
       notebook = mcpResult.notebook;
-      new Notice(`✓ Notebook "${notebook?.name}" découvert`, 3000);
+      new Notice(`Notebook "${notebook?.name}" discovered`, 3000);
       this.logger.info("Notebook auto-discovered", mcpResult);
 
     } catch (mcpError) {
       const errorMsg = mcpError instanceof Error ? mcpError.message : String(mcpError);
       if (errorMsg.includes("fetch") || errorMsg.includes("ECONNREFUSED")) {
-        new Notice("⚠️ MCP NotebookLM non démarré (localhost:3000)", 5000);
+        new Notice("MCP NotebookLM not started (localhost:3000)", 5000);
       } else {
         new Notice(`⚠️ MCP: ${errorMsg}`, 5000);
       }
@@ -592,7 +592,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     }
 
     if (!notebook) {
-      new Notice("Erreur: notebook non retourné par MCP");
+      new Notice("Error: notebook not returned by MCP");
       return false;
     }
 
@@ -603,7 +603,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     // 3. Add to config.md
     const configFile = this.app.vault.getAbstractFileByPath(CONFIG_PATH);
     if (!configFile || !(configFile instanceof TFile)) {
-      new Notice(`Config non trouvée: ${CONFIG_PATH}`);
+      new Notice(`Config not found: ${CONFIG_PATH}`);
       return false;
     }
 
@@ -611,7 +611,7 @@ export default class SubstackPublisherPlugin extends Plugin {
 
     const jsonMatch = configContent.match(/```json\n([\s\S]*?)\n```/);
     if (!jsonMatch || !jsonMatch[1]) {
-      new Notice("Bloc JSON non trouvé dans config.md");
+      new Notice("JSON block not found in config.md");
       return false;
     }
 
@@ -698,7 +698,7 @@ export default class SubstackPublisherPlugin extends Plugin {
         });
 
         if (!config) {
-          new Notice("Opération annulée");
+          new Notice("Operation cancelled");
           return;
         }
 
@@ -726,7 +726,7 @@ export default class SubstackPublisherPlugin extends Plugin {
                 } else {
                   // Registration failed - show options modal
                   const action = await new Promise<"retry" | "change" | "skip">((resolve) => {
-                    new NotebookErrorModal(this.app, config.notebook!, result.error || "Erreur inconnue", resolve).open();
+                    new NotebookErrorModal(this.app, config.notebook!, result.error || "Unknown error", resolve).open();
                   });
 
                   if (action === "retry") {
@@ -734,7 +734,7 @@ export default class SubstackPublisherPlugin extends Plugin {
                     continue;
                   } else if (action === "change") {
                     // User wants to choose another notebook - abort this pipeline
-                    new Notice("Relancez le pipeline pour choisir un autre notebook");
+                    new Notice("Restart the pipeline to choose a different notebook");
                     return;
                   } else {
                     // action === "skip" - continue without NotebookLM
@@ -751,7 +751,7 @@ export default class SubstackPublisherPlugin extends Plugin {
               if (notebookUrl) {
                 const result = await this.tryRegisterNotebook(config.notebook, notebookUrl);
                 if (!result.success) {
-                  new Notice(`Notebook non ajouté: ${result.error?.substring(0, 50)}`);
+                  new Notice(`Notebook not added: ${result.error?.substring(0, 50)}`);
                 }
               }
             }
@@ -779,14 +779,14 @@ export default class SubstackPublisherPlugin extends Plugin {
       // 4. Load the template and extract dataviewjs block
       const templateFile = this.app.vault.getAbstractFileByPath(TEMPLATE_PATH);
       if (!templateFile || !(templateFile instanceof TFile)) {
-        new Notice(`Template non trouvé: ${TEMPLATE_PATH}`);
+        new Notice(`Template not found: ${TEMPLATE_PATH}`);
         return;
       }
 
       const templateContent = await this.app.vault.read(templateFile);
       const dataviewjsMatch = templateContent.match(/```dataviewjs[\s\S]*?```/);
       if (!dataviewjsMatch) {
-        new Notice("Bloc dataviewjs non trouvé dans le template");
+        new Notice("Dataviewjs block not found in template");
         return;
       }
       const workflowButton = dataviewjsMatch[0];
@@ -874,7 +874,7 @@ export default class SubstackPublisherPlugin extends Plugin {
    */
   private async batchPublishFolder(folder: TFolder): Promise<void> {
     if (!this.settings.wordpressEnabled || this.settings.wordpressServers.length === 0) {
-      new Notice("WordPress n'est pas configuré");
+      new Notice("WordPress is not configured");
       return;
     }
 
@@ -892,7 +892,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     }
 
     if (mdFiles.length === 0) {
-      new Notice(`Aucun fichier markdown dans ${folder.name}`);
+      new Notice(`No markdown files in ${folder.name}`);
       return;
     }
 
@@ -902,7 +902,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     });
 
     if (!confirmed) {
-      new Notice("Publication annulée");
+      new Notice("Publishing cancelled");
       return;
     }
 
@@ -911,7 +911,7 @@ export default class SubstackPublisherPlugin extends Plugin {
       ?? this.settings.wordpressServers[0];
 
     if (!server) {
-      new Notice("Aucun serveur WordPress configuré");
+      new Notice("No WordPress server configured");
       return;
     }
 
@@ -1005,7 +1005,7 @@ export default class SubstackPublisherPlugin extends Plugin {
    */
   private async republishAllArticles(): Promise<void> {
     if (!this.settings.wordpressEnabled || this.settings.wordpressServers.length === 0) {
-      new Notice("WordPress n'est pas configuré");
+      new Notice("WordPress is not configured");
       return;
     }
 
@@ -1013,7 +1013,7 @@ export default class SubstackPublisherPlugin extends Plugin {
       ?? this.settings.wordpressServers[0];
 
     if (!server) {
-      new Notice("Aucun serveur WordPress configuré");
+      new Notice("No WordPress server configured");
       return;
     }
 
@@ -1047,7 +1047,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     }
 
     if (matchingFiles.length === 0) {
-      new Notice("Aucun article publié trouvé dans le vault");
+      new Notice("No published articles found in the vault");
       return;
     }
 
@@ -1060,7 +1060,7 @@ export default class SubstackPublisherPlugin extends Plugin {
     });
 
     if (!confirmed) {
-      new Notice("Republication annulée");
+      new Notice("Republishing cancelled");
       return;
     }
 
@@ -1418,7 +1418,7 @@ class NewNotebookModal extends Modal {
 
     const buttonsDiv = contentEl.createDiv({ cls: "config-buttons" });
 
-    const skipBtn = buttonsDiv.createEl("button", { text: "Sans NotebookLM", cls: "config-btn" });
+    const skipBtn = buttonsDiv.createEl("button", { text: "Without NotebookLM", cls: "config-btn" });
     skipBtn.addEventListener("click", () => {
       this.resolve(null);
       this.close();
@@ -1429,13 +1429,13 @@ class NewNotebookModal extends Modal {
       const url = urlInput.value.trim();
 
       if (!url) {
-        new Notice("Veuillez entrer l'URL du notebook");
+        new Notice("Please enter the notebook URL");
         return;
       }
 
       // Validate URL format
       if (!url.includes("notebooklm.google.com/notebook/")) {
-        new Notice("URL invalide. Format: https://notebooklm.google.com/notebook/...");
+        new Notice("Invalid URL. Format: https://notebooklm.google.com/notebook/...");
         return;
       }
 
@@ -1477,19 +1477,19 @@ class NotebookErrorModal extends Modal {
 
     const infoDiv = contentEl.createDiv({ cls: "error-info" });
     infoDiv.createEl("p", {
-      text: "Pour donner accès au MCP, partagez le notebook avec le compte Google utilisé par le MCP NotebookLM.",
+      text: "To grant MCP access, share the notebook with the Google account used by MCP NotebookLM.",
       cls: "info-text"
     });
 
     const buttonsDiv = contentEl.createDiv({ cls: "config-buttons" });
 
-    const retryBtn = buttonsDiv.createEl("button", { text: "Réessayer", cls: "config-btn config-btn-primary" });
+    const retryBtn = buttonsDiv.createEl("button", { text: "Retry", cls: "config-btn config-btn-primary" });
     retryBtn.addEventListener("click", () => {
       this.resolve("retry");
       this.close();
     });
 
-    const changeBtn = buttonsDiv.createEl("button", { text: "Autre notebook", cls: "config-btn" });
+    const changeBtn = buttonsDiv.createEl("button", { text: "Different notebook", cls: "config-btn" });
     changeBtn.addEventListener("click", () => {
       this.resolve("change");
       this.close();
@@ -1543,23 +1543,23 @@ class PipelineConfigModal extends Modal {
     contentEl.empty();
     contentEl.addClass("pipeline-config-modal");
 
-    contentEl.createEl("h3", { text: "Configuration du pipeline" });
+    contentEl.createEl("h3", { text: "Pipeline configuration" });
 
     // Notebook selection (if needed)
     if (this.needsNotebook) {
       const notebookSection = contentEl.createDiv({ cls: "config-section" });
-      notebookSection.createEl("h4", { text: "Notebook (références NotebookLM)" });
+      notebookSection.createEl("h4", { text: "Notebook (NotebookLM references)" });
 
       const notebookSelect = notebookSection.createEl("select", { cls: "config-select" });
-      notebookSelect.createEl("option", { text: "-- sélectionner --", value: "" });
+      notebookSelect.createEl("option", { text: "-- select --", value: "" });
 
       for (const nb of this.availableNotebooks) {
         notebookSelect.createEl("option", { text: nb.name, value: nb.id });
       }
-      notebookSelect.createEl("option", { text: "── sans NotebookLM ──", value: "", attr: { disabled: "true" } });
+      notebookSelect.createEl("option", { text: "── without NotebookLM ──", value: "", attr: { disabled: "true" } });
       notebookSelect.createEl("option", { text: "Regards", value: "_regards" });
       notebookSelect.createEl("option", { text: "Psycho", value: "_psycho" });
-      notebookSelect.createEl("option", { text: "Autre", value: "_autre" });
+      notebookSelect.createEl("option", { text: "Other", value: "_autre" });
 
       notebookSelect.addEventListener("change", () => {
         const val = notebookSelect.value;
@@ -1585,10 +1585,10 @@ class PipelineConfigModal extends Modal {
     // Category selection (if needed)
     if (this.needsCategorie) {
       const categorieSection = contentEl.createDiv({ cls: "config-section" });
-      categorieSection.createEl("h4", { text: "Catégorie (style d'écriture)" });
+      categorieSection.createEl("h4", { text: "Category (writing style)" });
 
       const categorieSelect = categorieSection.createEl("select", { cls: "config-select" });
-      categorieSelect.createEl("option", { text: "-- sélectionner --", value: "" });
+      categorieSelect.createEl("option", { text: "-- select --", value: "" });
 
       for (const cat of this.availableCategories) {
         categorieSelect.createEl("option", { text: cat, value: cat });
@@ -1600,10 +1600,10 @@ class PipelineConfigModal extends Modal {
 
       // Custom category input
       const customCatDiv = categorieSection.createDiv({ cls: "config-custom" });
-      customCatDiv.createEl("span", { text: "Ou nouvelle : " });
+      customCatDiv.createEl("span", { text: "Or new: " });
       this.customCategorieInput = customCatDiv.createEl("input", {
         type: "text",
-        placeholder: "nom de la catégorie",
+        placeholder: "category name",
         cls: "config-input"
       });
       this.customCategorieInput.addEventListener("input", () => {
@@ -1617,21 +1617,21 @@ class PipelineConfigModal extends Modal {
     // Buttons
     const buttonsDiv = contentEl.createDiv({ cls: "config-buttons" });
 
-    const cancelBtn = buttonsDiv.createEl("button", { text: "Annuler", cls: "config-btn" });
+    const cancelBtn = buttonsDiv.createEl("button", { text: "Cancel", cls: "config-btn" });
     cancelBtn.addEventListener("click", () => {
       this.resolve(null);
       this.close();
     });
 
-    const confirmBtn = buttonsDiv.createEl("button", { text: "Valider", cls: "config-btn config-btn-primary" });
+    const confirmBtn = buttonsDiv.createEl("button", { text: "Confirm", cls: "config-btn config-btn-primary" });
     confirmBtn.addEventListener("click", () => {
       // Validate required fields
       if (this.needsNotebook && !this.selectedNotebook) {
-        new Notice("Veuillez sélectionner un notebook");
+        new Notice("Please select a notebook");
         return;
       }
       if (this.needsCategorie && !this.selectedCategorie) {
-        new Notice("Veuillez sélectionner une catégorie");
+        new Notice("Please select a category");
         return;
       }
       this.close();
@@ -2083,16 +2083,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       .addButton((btn) => btn
         .setButtonText("Open LinkedIn developer portal")
         .onClick(() => {
-          // Use child_process to open in true system default browser
-
-          const { exec } = require("child_process");
-          if (Platform.isWin) {
-            exec('start "" "https://www.linkedin.com/developers/apps"');
-          } else if (Platform.isMacOS) {
-            exec('open "https://www.linkedin.com/developers/apps"');
-          } else {
-            exec('xdg-open "https://www.linkedin.com/developers/apps"');
-          }
+          window.open("https://www.linkedin.com/developers/apps");
         }));
 
     new Setting(containerEl)
@@ -2119,15 +2110,7 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
       .addButton((btn) => btn
         .setButtonText("Download Postman")
         .onClick(() => {
-
-          const { exec } = require("child_process");
-          if (Platform.isWin) {
-            exec('start "" "https://www.postman.com/downloads/"');
-          } else if (Platform.isMacOS) {
-            exec('open "https://www.postman.com/downloads/"');
-          } else {
-            exec('xdg-open "https://www.postman.com/downloads/"');
-          }
+          window.open("https://www.postman.com/downloads/");
         }));
 
     new Setting(containerEl)
@@ -2381,32 +2364,32 @@ class BatchPublishConfirmModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    contentEl.createEl("h3", { text: "Publier le répertoire sur WordPress" });
+    contentEl.createEl("h3", { text: "Publish folder to WordPress" });
 
     contentEl.createEl("p", {
-      text: `Vous êtes sur le point de publier ${this.fileCount} fichier(s) du dossier "${this.folderName}" sur WordPress.`
+      text: `You are about to publish ${this.fileCount} file(s) from folder "${this.folderName}" to WordPress.`
     });
 
     contentEl.createEl("p", {
-      text: "Les articles déjà publiés seront mis à jour, les nouveaux seront créés.",
+      text: "Already published articles will be updated, new ones will be created.",
       cls: "batch-publish-info"
     });
 
     contentEl.createEl("p", {
-      text: "⚠️ les mises à jour de backlinks sont désactivées pendant le batch pour éviter les doublons.",
+      text: "Backlink updates are disabled during batch to avoid duplicates.",
       cls: "batch-publish-warning"
     });
 
     const buttonsDiv = contentEl.createDiv({ cls: "batch-publish-buttons" });
 
-    const cancelBtn = buttonsDiv.createEl("button", { text: "Annuler" });
+    const cancelBtn = buttonsDiv.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => {
       this.resolve(false);
       this.close();
     });
 
     const confirmBtn = buttonsDiv.createEl("button", {
-      text: `Publier ${this.fileCount} fichiers`,
+      text: `Publish ${this.fileCount} files`,
       cls: "mod-cta"
     });
     confirmBtn.addEventListener("click", () => {
@@ -2631,9 +2614,8 @@ class WordPressServerEditModal extends Modal {
     cancelBtn.addEventListener("click", () => this.close());
 
     const saveBtn = buttonContainer.createEl("button", { text: "Save", cls: "mod-cta" });
-    saveBtn.addEventListener("click", async () => {
-      await this.onSave(this.editedServer);
-      this.close();
+    saveBtn.addEventListener("click", () => {
+      void this.onSave(this.editedServer).then(() => this.close());
     });
   }
 

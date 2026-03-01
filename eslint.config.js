@@ -103,7 +103,7 @@ export default [
           // Plugin-specific acronyms
           "MCP", "WP", "FR", "EN"
         ],
-        ignoreWords: ["IDs", "GET"]
+        ignoreWords: ["IDs", "GET", "English", "French"]
       }],
     },
   },

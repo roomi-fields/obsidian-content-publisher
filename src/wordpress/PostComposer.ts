@@ -153,7 +153,7 @@ export class WordPressPostComposer extends Modal {
     await this.detectBilingualContent();
 
     // Check for separate EN file in _en/ subdirectory
-    await this.detectEnglishVersion();
+    this.detectEnglishVersion();
 
     // Detect content type and check for existing content
     await this.detectContentTypeAndExisting();
@@ -176,13 +176,14 @@ export class WordPressPostComposer extends Modal {
         // Info: EN version will be published too
         const infoDiv = contentEl.createDiv({ cls: "wordpress-info-banner" });
         infoDiv.createEl("span", {
-          text: "🇬🇧 version anglaise détectée dans _EN/ — sera publiée automatiquement"
+          // eslint-disable-next-line obsidianmd/ui/sentence-case -- "English" is a proper noun
+          text: "English version detected in _en/ — will be published automatically"
         });
       } else {
         // Warning: No EN version
         const warningDiv = contentEl.createDiv({ cls: "wordpress-warning-banner" });
         warningDiv.createEl("span", {
-          text: `⚠️ Polylang activé mais pas de version anglaise (_en/${this.activeFile?.name || "fichier.md"})`
+          text: `Polylang enabled but no English version found (_en/${this.activeFile?.name || "file.md"})`
         });
       }
     }
@@ -369,7 +370,7 @@ export class WordPressPostComposer extends Modal {
         attr: { id: "update-date-checkbox" }
       });
       dateOptionContainer.createEl("label", {
-        text: "Mettre à jour la date de publication",
+        text: "Update publication date",
         attr: { for: "update-date-checkbox" }
       });
       dateCheckbox.addEventListener("change", () => {
@@ -387,7 +388,7 @@ export class WordPressPostComposer extends Modal {
         attr: { id: "move-article-checkbox" }
       });
       moveOptionContainer.createEl("label", {
-        text: "Déplacer l'article après publication",
+        text: "Move article after publishing",
         attr: { for: "move-article-checkbox" }
       });
       moveCheckbox.addEventListener("change", () => {
@@ -542,7 +543,7 @@ export class WordPressPostComposer extends Modal {
    * Detect if an English version exists in _en/ subdirectory
    * Example: article.md → _en/article.md
    */
-  private async detectEnglishVersion(): Promise<void> {
+  private detectEnglishVersion(): void {
     if (!this.activeFile || !this.activeFile.parent) {
       return;
     }
@@ -2031,9 +2032,9 @@ ${illustrationImg}
       this.logger.info(`${enAction} EN version: ${enUrl}`);
 
       // ===== SUCCESS =====
-      const frActionText = existingFrId ? "Mis à jour" : "Publié";
-      const enActionText = existingEnId ? "mis à jour" : "publié";
-      new Notice(`${frActionText} FR + ${enActionText} EN:\n🇫🇷 ${frUrl}\n🇬🇧 ${enUrl}`);
+      const frActionText = existingFrId ? "Updated" : "Published";
+      const enActionText = existingEnId ? "updated" : "published";
+      new Notice(`${frActionText} FR + ${enActionText} EN:\n${frUrl}\n${enUrl}`);
 
       // Update FR frontmatter
       try {

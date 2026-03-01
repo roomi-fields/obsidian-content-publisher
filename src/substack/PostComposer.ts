@@ -159,8 +159,8 @@ export class SubstackPostComposer extends Modal {
       });
 
       const langOptions: { value: PolylangLanguage; label: string }[] = [
-        { value: "en", label: "🇬🇧 English" },
-        { value: "fr", label: "🇫🇷 Français" }
+        { value: "en", label: "English" },
+        { value: "fr", label: "French" }
       ];
 
       for (const opt of langOptions) {

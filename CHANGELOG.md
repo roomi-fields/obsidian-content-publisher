@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-11-07
+
+### Fixed
+
+- Substack login window never closing on some Linux setups (#3): Obsidian sent the post-login redirect to the system browser, so the session was never captured. The whole login flow now stays inside the login window, and the session is captured as soon as Substack confirms a logged-in user, whatever page is shown.
+
 ## [2.4.0] - 2026-05-16
 
 ### Fixed

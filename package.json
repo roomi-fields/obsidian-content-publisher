@@ -1,6 +1,6 @@
 {
   "name": "obsidian-content-publisher",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Publish your Obsidian notes to multiple platforms: Substack, WordPress, and more.",
   "main": "main.js",
   "type": "module",

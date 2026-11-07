@@ -7,7 +7,7 @@ vi.mock("obsidian", () => ({
   requestUrl: vi.fn(),
 }));
 
-import { SubstackAuth } from "../src/substack/auth";
+import { SubstackAuth, isSubstackUrl } from "../src/substack/auth";
 import { Platform } from "obsidian";
 
 describe("SubstackAuth", () => {
@@ -84,5 +84,20 @@ describe("SubstackAuth", () => {
       // Verify callback is stored (access via any)
       expect((auth as any).onCookieCaptured).toBe(callback);
     });
+  });
+});
+
+describe("isSubstackUrl", () => {
+  it("accepts substack.com and its subdomains over https", () => {
+    expect(isSubstackUrl("https://substack.com/home")).toBe(true);
+    expect(isSubstackUrl("https://myblog.substack.com/p/post")).toBe(true);
+  });
+
+  it("rejects other hosts, look-alikes and non-https URLs", () => {
+    expect(isSubstackUrl("https://accounts.google.com/o/oauth2")).toBe(false);
+    expect(isSubstackUrl("https://evilsubstack.com/")).toBe(false);
+    expect(isSubstackUrl("https://substack.com.evil.io/")).toBe(false);
+    expect(isSubstackUrl("http://substack.com/")).toBe(false);
+    expect(isSubstackUrl("not a url")).toBe(false);
   });
 });

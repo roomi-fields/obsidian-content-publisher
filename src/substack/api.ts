@@ -42,6 +42,26 @@ export class SubstackAPI {
   }
 
   /**
+   * Check that the cookie belongs to a logged-in Substack user.
+   * Anonymous visitors also get a substack.sid cookie, so its presence alone proves nothing.
+   */
+  async isSessionValid(): Promise<boolean> {
+    const response = await requestUrl({
+      url: "https://substack.com/api/v1/user/profile/self",
+      method: "GET",
+      headers: this.getHeaders(),
+      throw: false
+    });
+    if (response.status < 200 || response.status >= 300) return false;
+    try {
+      const profile = response.json as { id?: unknown } | null;
+      return !!profile && profile.id !== undefined && profile.id !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Get user profile with publications list
    * Returns the list of publication subdomains the user owns
    */

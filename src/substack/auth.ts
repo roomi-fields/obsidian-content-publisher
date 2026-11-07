@@ -1,4 +1,5 @@
 import { Notice, Platform } from "obsidian";
+import { SubstackAPI } from "./api";
 
 /**
  * Handles Substack authentication via Electron BrowserWindow
@@ -33,7 +34,6 @@ interface CookieStore {
   get(filter: { domain: string }): Promise<ElectronCookie[]>;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- Used as type reference for typeof in ElectronModule interface
 declare class BrowserWindowClass {
   constructor(options: BrowserWindowOptions);
   setMenuBarVisibility(visible: boolean): void;
@@ -55,10 +55,33 @@ interface BrowserWindowOptions {
   };
 }
 
+interface WindowOpenResponse {
+  action: "allow" | "deny";
+  overrideBrowserWindowOptions?: { parent: BrowserWindowClass };
+}
+
 interface WebContents {
   session: { cookies: CookieStore };
-  getURL(): string;
   on(event: string, callback: (event: unknown, url: string) => void): void;
+  removeAllListeners(event: string): void;
+  setWindowOpenHandler(
+    handler: (details: { url: string }) => WindowOpenResponse
+  ): void;
+}
+
+/**
+ * True for https URLs on substack.com or one of its subdomains
+ */
+export function isSubstackUrl(url: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(url);
+    return (
+      protocol === "https:" &&
+      (hostname === "substack.com" || hostname.endsWith(".substack.com"))
+    );
+  } catch {
+    return false;
+  }
 }
 
 export class SubstackAuth {
@@ -130,102 +153,67 @@ export class SubstackAuth {
       // Hide menu bar
       authWindow.setMenuBarVisibility(false);
 
+      // Keep the whole login flow inside this window. Obsidian sends pop-ups and
+      // navigations of every window to the system browser; there the session lands in
+      // the browser instead of this window and is never captured (issue #3).
+      const contents = authWindow.webContents;
+      contents.removeAllListeners("will-navigate");
+      contents.setWindowOpenHandler(({ url }) => {
+        if (isSubstackUrl(url)) {
+          authWindow.loadURL(url);
+          return { action: "deny" };
+        }
+        // Third-party sign-in (Google, Apple…): child window sharing this session
+        return {
+          action: "allow",
+          overrideBrowserWindowOptions: { parent: authWindow }
+        };
+      });
+
       let cookieCaptured = false;
+      let checking = false;
 
-      // Check for cookie - captures when format is valid
-      const checkCookie = async (): Promise<boolean> => {
-        if (cookieCaptured) return true;
-
+      // Capture the session as soon as Substack confirms it belongs to a logged-in user,
+      // whatever page the window currently shows.
+      const checkSession = async (): Promise<void> => {
+        if (cookieCaptured || checking || authWindow.isDestroyed()) return;
+        checking = true;
         try {
-          // Get ALL substack cookies from this window's session
-          const allCookies: ElectronCookie[] =
-            await authWindow.webContents.session.cookies.get({
-              domain: ".substack.com"
-            });
-
-          // Find the sid cookie
-          const sidCookie = allCookies.find(
-            (c: ElectronCookie) => c.name === "substack.sid"
+          const allCookies: ElectronCookie[] = await contents.session.cookies.get(
+            { domain: "substack.com" }
           );
+          const cookieValue = allCookies
+            .filter(
+              (c: ElectronCookie) =>
+                c.name.startsWith("substack") || c.name === "connect.sid"
+            )
+            .map((c: ElectronCookie) => `${c.name}=${c.value}`)
+            .join("; ");
 
-          if (sidCookie && sidCookie.value) {
-            // Build cookie string with all relevant cookies
-            const relevantCookies = allCookies
-              .filter(
-                (c: ElectronCookie) =>
-                  c.name.startsWith("substack") || c.name === "connect.sid"
-              )
-              .map((c: ElectronCookie) => `${c.name}=${c.value}`)
-              .join("; ");
+          if (!this.hasValidCookieFormat(cookieValue)) return;
+          if (!(await new SubstackAPI(cookieValue).isSessionValid())) return;
+          if (cookieCaptured || authWindow.isDestroyed()) return;
 
-            const cookieValue =
-              relevantCookies || `substack.sid=${sidCookie.value}`;
-
-            // Check cookie format before capturing
-            const hasValidFormat = this.hasValidCookieFormat(cookieValue);
-            if (!hasValidFormat) {
-              return false;
-            }
-
-            cookieCaptured = true;
-            this.onCookieCaptured(cookieValue);
-            new Notice("Login successful");
-            authWindow.close();
-            return true;
-          }
+          cookieCaptured = true;
+          this.onCookieCaptured(cookieValue);
+          new Notice("Login successful");
+          authWindow.close();
         } catch {
-          // Expected during login flow - cookies may not be available yet
-          // Errors here are typically timing-related, not fatal
-        }
-        return false;
-      };
-
-      // Check after navigation
-      const checkIfAuthenticated = (url: string): void => {
-        // Check on any page that's not the sign-in page
-        if (!url.includes("sign-in") && !url.includes("magic-link")) {
-          // Wait for cookies to be fully set
-          activeWindow.setTimeout(() => {
-            void checkCookie().then((found) => {
-              if (!found) {
-                // Retry after another delay
-                activeWindow.setTimeout(() => {
-                  void checkCookie();
-                }, 2000);
-              }
-            });
-          }, 1500);
+          // Cookies or network not ready yet: the next check retries
+        } finally {
+          checking = false;
         }
       };
 
-      authWindow.webContents.on(
-        "did-navigate",
-        (_event: unknown, url: string) => {
-          checkIfAuthenticated(url);
-        }
-      );
-
-      authWindow.webContents.on(
-        "did-navigate-in-page",
-        (_event: unknown, url: string) => {
-          checkIfAuthenticated(url);
-        }
-      );
-
-      // Also check periodically as fallback
+      contents.on("did-navigate", () => void checkSession());
+      contents.on("did-navigate-in-page", () => void checkSession());
       const intervalId = activeWindow.setInterval(() => {
         if (authWindow.isDestroyed() || cookieCaptured) {
           activeWindow.clearInterval(intervalId);
           return;
         }
-        const currentUrl = authWindow.webContents.getURL();
-        if (
-          !currentUrl.includes("sign-in") &&
-          !currentUrl.includes("magic-link")
-        ) {
-          void checkCookie();
-        }
-      }, 3000);
+        void checkSession();
+      }, 2000);
 
       // Cleanup on close
       authWindow.on("closed", () => {

@@ -289,15 +289,34 @@ export function tickCheckbox(content: string, label: string): string | null {
   return content.replace(box, "$1x$3");
 }
 
+/** A note frontmatter value as a page field: strings, numbers, booleans, lists of those; null otherwise */
+export function copiedValue(value: unknown): { value: string; raw?: boolean } | null {
+  if (typeof value === "string") return value ? { value } : null;
+  if (typeof value === "number" || typeof value === "boolean") return { value: String(value), raw: true };
+  if (Array.isArray(value) && value.every((v) => typeof v === "string" || typeof v === "number")) {
+    return { value: `[${value.map((v) => (typeof v === "string" ? yamlScalar(v) : String(v))).join(", ")}]`, raw: true };
+  }
+  return null;
+}
+
 /** Page fields, in frontmatter order, according to the site configuration */
 export function pageFields(
   config: StaticSiteConfig,
-  page: { title: string; section: string; date: string; description?: string; cover?: string }
+  page: {
+    title: string;
+    section: string;
+    date: string;
+    description?: string;
+    cover?: string;
+    /** Fields copied from the note (before fixed fields: the first occurrence of a key wins) */
+    copied?: Array<{ key: string; value: string; raw?: boolean }>;
+  }
 ): Array<{ key: string; value: string; raw?: boolean }> {
   const f = config.fields;
   const fields: Array<{ key: string; value: string; raw?: boolean }> = [
     { key: f.title, value: page.title },
     { key: f.section, value: page.section },
+    ...(page.copied ?? []),
     ...config.fixedFields.map((x) => ({ key: x.key.trim(), value: x.value })),
     { key: f.date, value: page.date, raw: true }
   ];

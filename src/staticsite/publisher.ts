@@ -7,6 +7,7 @@ import {
   formatDate,
   isImagePath,
   isValidSlug,
+  copiedValue,
   normalizeFolder,
   pageFields,
   tickCheckbox,
@@ -142,7 +143,8 @@ export class StaticSitePublisher {
     const content = buildPageFile(
       pageFields(this.config, {
         title: options.title,
-        section: section.name,
+        section: section.fieldValue?.trim() || section.name,
+        copied: this.copiedFields(file),
         date: this.keptDate(existing) ?? formatDate(this.config.dateFormat),
         ...(options.description ? { description: options.description } : {}),
         ...(cover ? { cover: cover.url } : {})
@@ -190,6 +192,17 @@ export class StaticSitePublisher {
       return null;
     }
     return path;
+  }
+
+  /** Configured note fields, as they are in the note's frontmatter */
+  private copiedFields(file: TFile): Array<{ key: string; value: string; raw?: boolean }> {
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    const fields: Array<{ key: string; value: string; raw?: boolean }> = [];
+    for (const key of this.config.copiedFields.map((k) => k.trim()).filter(Boolean)) {
+      const copied = copiedValue(fm[key]);
+      if (copied) fields.push({ key, ...copied });
+    }
+    return fields;
   }
 
   /** The first publication date is kept on republish */

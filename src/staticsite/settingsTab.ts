@@ -57,7 +57,7 @@ export function renderStaticSiteSettings(
   // Sections
   new Setting(containerEl)
     .setName("Sections")
-    .setDesc("Name (also written in the section field), vault folder of its pages, URL prefix")
+    .setDesc("Name, vault folder of its pages, URL prefix, and the value written in the section field if not the name")
     .addButton((b) =>
       b.setButtonText("Add section").onClick(async () => {
         config.sections.push({ name: "", folder: "", urlPrefix: "/" });
@@ -83,6 +83,12 @@ export function renderStaticSiteSettings(
       .addText((t) =>
         t.setPlaceholder("/blog/").setValue(section.urlPrefix).onChange(async (v) => {
           section.urlPrefix = v.trim();
+          await save();
+        })
+      )
+      .addText((t) =>
+        t.setPlaceholder("Field value").setValue(section.fieldValue ?? "").onChange(async (v) => {
+          section.fieldValue = v.trim();
           await save();
         })
       )
@@ -138,6 +144,16 @@ export function renderStaticSiteSettings(
   text("Date format", "Tokens YYYY, MM, DD", () => config.dateFormat, (v) => {
     config.dateFormat = v;
   }, "YYYY-MM-DD");
+
+  text(
+    "Copied fields",
+    "Fields of the note copied as is into the page, separated by commas (they override fixed fields)",
+    () => config.copiedFields.join(", "),
+    (v) => {
+      config.copiedFields = v.split(",").map((k) => k.trim()).filter(Boolean);
+    },
+    "type, tags"
+  );
 
   text(
     "Build trigger note",

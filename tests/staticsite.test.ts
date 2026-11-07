@@ -4,6 +4,7 @@ import {
   LinkResolver,
   buildPageFile,
   convertBody,
+  copiedValue,
   formatDate,
   isValidSlug,
   normalizeUrlPrefix,
@@ -185,5 +186,36 @@ describe("tickCheckbox", () => {
   it("keeps a ticked checkbox and reports a missing one", () => {
     expect(tickCheckbox("* [X] Deploy (prod)", "Deploy (prod)")).toBe("* [x] Deploy (prod)");
     expect(tickCheckbox(note, "Mettre en ligne re.liance")).toBeNull();
+  });
+});
+
+describe("copied fields", () => {
+  it("converts note values", () => {
+    expect(copiedValue("x")).toEqual({ value: "x" });
+    expect(copiedValue("")).toBeNull();
+    expect(copiedValue(25)).toEqual({ value: "25", raw: true });
+    expect(copiedValue(["a-b", "c d"])).toEqual({ value: '[a-b, "c d"]', raw: true });
+    expect(copiedValue({ a: 1 })).toBeNull();
+  });
+
+  it("override fixed fields", () => {
+    const config: StaticSiteConfig = {
+      ...DEFAULT_STATIC_SITE,
+      fields: { ...DEFAULT_STATIC_SITE.fields, section: "rubrique" },
+      fixedFields: [{ key: "type", value: "article" }]
+    };
+    const file = buildPageFile(
+      pageFields(config, {
+        title: "T",
+        section: "cnv",
+        date: "2026-01-02",
+        copied: [
+          { key: "type", value: "exercice" },
+          { key: "article", value: "mon-article" }
+        ]
+      }),
+      ""
+    );
+    expect(file).toBe("---\ntitle: T\nrubrique: cnv\ntype: exercice\narticle: mon-article\ndate: 2026-01-02\n---\n");
   });
 });

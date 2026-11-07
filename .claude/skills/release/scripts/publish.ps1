@@ -139,15 +139,15 @@ Write-Step "Creating git commit and tag..."
 if (-not $DryRun) {
     git add -A
     git commit -m "chore: release v$NewVersion"
-    git tag -a "v$NewVersion" -m "Release v$NewVersion"
+    git tag -a "$NewVersion" -m "Release $NewVersion"
 }
-Write-Success "Created commit and tag v$NewVersion"
+Write-Success "Created commit and tag $NewVersion"
 
 # Step 8: Push to GitHub
 Write-Step "Pushing to GitHub..."
 if (-not $DryRun) {
     git push origin $currentBranch
-    git push origin "v$NewVersion"
+    git push origin "$NewVersion"
 }
 Write-Success "Pushed to GitHub"
 
@@ -170,7 +170,7 @@ if (-not $SkipNpm) {
 if (-not $SkipGitHub) {
     Write-Step "Creating GitHub release..."
     if (-not $DryRun) {
-        gh release create "v$NewVersion" --title "v$NewVersion" --generate-notes
+        gh release create "$NewVersion" --title "$NewVersion" --latest --generate-notes main.js manifest.json styles.css
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "GitHub release creation failed (gh CLI may not be installed)"
         } else {

@@ -76,17 +76,20 @@ npm test
 
 ### 5. Commit and Tag
 
+**Tag = exact manifest version, NO `v` prefix** (e.g. `2.4.1`). The Obsidian community
+directory requires a release whose tag equals `manifest.json` version.
+
 ```bash
-git add -A
-git commit -m "chore: release vX.Y.Z"
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git add package.json package-lock.json manifest.json versions.json CHANGELOG.md
+git commit -m "chore: release X.Y.Z"
+git tag -a X.Y.Z -m "Release X.Y.Z"
 ```
 
 ### 6. Push to GitHub
 
 ```bash
 git push origin master
-git push origin vX.Y.Z
+git push origin X.Y.Z
 ```
 
 ### 7. Create GitHub Release (MANUAL)
@@ -94,9 +97,9 @@ git push origin vX.Y.Z
 **IMPORTANT**: Create the release manually with `gh` CLI. Do NOT rely on GitHub Actions.
 
 ```bash
-gh release create vX.Y.Z \
-  --repo roomi-fields/obsidian-substack \
-  --title "vX.Y.Z" \
+gh release create X.Y.Z \
+  --repo roomi-fields/obsidian-content-publisher \
+  --title "X.Y.Z" --latest \
   --notes "Release notes here..." \
   main.js manifest.json styles.css
 ```
@@ -107,11 +110,13 @@ The release MUST include these files as assets:
 - `manifest.json` - Plugin manifest
 - `styles.css` - Plugin styles
 
-### 8. Deploy to Test Vault (Optional)
+### 8. Deploy to Vault (D:\Obsidian\Articles on PC1)
 
 ```bash
-powershell -ExecutionPolicy Bypass -File "deployment/scripts/deploy.ps1"
+cp main.js manifest.json styles.css /mnt/pc1/Obsidian/Articles/.obsidian/plugins/content-publisher/
 ```
+
+Then reload the plugin in Obsidian (disable + enable).
 
 ## Troubleshooting
 
@@ -121,23 +126,23 @@ If creating a release fails because it already exists:
 
 ```bash
 # Delete existing release
-gh release delete vX.Y.Z --repo roomi-fields/obsidian-substack --yes
+gh release delete X.Y.Z --repo roomi-fields/obsidian-content-publisher --yes
 
 # Delete and recreate tag
-git tag -d vX.Y.Z
-git push origin :refs/tags/vX.Y.Z
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git push origin vX.Y.Z
+git tag -d X.Y.Z
+git push origin :refs/tags/X.Y.Z
+git tag -a X.Y.Z -m "Release X.Y.Z"
+git push origin X.Y.Z
 
 # Create release again
-gh release create vX.Y.Z ...
+gh release create X.Y.Z ...
 ```
 
 ### Tag already exists
 
 ```bash
-git tag -d vX.Y.Z
-git push origin :refs/tags/vX.Y.Z
+git tag -d X.Y.Z
+git push origin :refs/tags/X.Y.Z
 ```
 
 ### Version mismatch

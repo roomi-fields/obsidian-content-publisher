@@ -24,6 +24,7 @@ import { convertMarkdownToHtml } from "./src/wordpress/markdownConverter";
 import { LinkedInAPI } from "./src/linkedin/api";
 import { LinkedInPostComposer } from "./src/linkedin/PostComposer";
 import { LinkedInVisibility } from "./src/linkedin/types";
+import { ReliancePostComposer } from "./src/reliance/PostComposer";
 
 interface SubstackPublisherSettings {
   devMode: boolean;
@@ -52,6 +53,9 @@ interface SubstackPublisherSettings {
   linkedinAccessToken: string;
   linkedinPersonId: string;
   linkedinDefaultVisibility: LinkedInVisibility;
+  // re.liance.art settings
+  relianceEnabled: boolean;
+  relianceRoot: string;
 }
 
 const DEFAULT_SETTINGS: SubstackPublisherSettings = {
@@ -80,7 +84,10 @@ const DEFAULT_SETTINGS: SubstackPublisherSettings = {
   linkedinEnabled: false,
   linkedinAccessToken: "",
   linkedinPersonId: "",
-  linkedinDefaultVisibility: "PUBLIC"
+  linkedinDefaultVisibility: "PUBLIC",
+  // re.liance.art defaults
+  relianceEnabled: false,
+  relianceRoot: "Publications/re.liance.art"
 };
 
 export default class SubstackPublisherPlugin extends Plugin {
@@ -150,6 +157,22 @@ export default class SubstackPublisherPlugin extends Plugin {
       });
     }
 
+    // re.liance.art ribbon icon (only if enabled)
+    if (this.settings.relianceEnabled) {
+      const reRibbonIconEl = this.addRibbonIcon(
+        "book-open",
+        "Publish to re.liance.art",
+        () => {
+          this.publishToReliance();
+        }
+      );
+      this.app.workspace.onLayoutReady(() => {
+        activeWindow.setTimeout(() => {
+          reRibbonIconEl.parentElement?.appendChild(reRibbonIconEl);
+        }, 100);
+      });
+    }
+
     // Move icon to bottom of ribbon after layout is ready
     this.app.workspace.onLayoutReady(() => {
       activeWindow.setTimeout(() => {
@@ -178,6 +201,14 @@ export default class SubstackPublisherPlugin extends Plugin {
       name: "Publish to LinkedIn",
       callback: () => {
         this.publishToLinkedIn();
+      }
+    });
+
+    this.addCommand({
+      id: "publish-to-reliance",
+      name: "Publish to re.liance.art",
+      callback: () => {
+        this.publishToReliance();
       }
     });
 
@@ -365,6 +396,23 @@ export default class SubstackPublisherPlugin extends Plugin {
       defaultVisibility: this.settings.linkedinDefaultVisibility
     });
     composer.open();
+  }
+
+  private publishToReliance(): void {
+    this.logger.logCommandExecution("publish-to-reliance");
+
+    if (!this.settings.relianceEnabled) {
+      new Notice("re.liance.art publishing is not enabled. Enable it in settings.");
+      return;
+    }
+
+    const root = this.settings.relianceRoot.trim().replace(/^\/+|\/+$/g, "");
+    if (!(this.app.vault.getAbstractFileByPath(root) instanceof TFolder)) {
+      new Notice(`re.liance.art folder not found in the vault: ${root}. Check the settings.`);
+      return;
+    }
+
+    new ReliancePostComposer(this.app, root).open();
   }
 
   /**
@@ -2248,6 +2296,42 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
             }
           });
         });
+    }
+
+    // re.liance.art Section
+    new Setting(containerEl).setName("re.liance.art").setHeading();
+
+    new Setting(containerEl)
+      .setName("Enable re.liance.art")
+      .setDesc("Publish notes as articles of the re.liance.art site (shows a button in the ribbon)")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.relianceEnabled)
+          .onChange(async (value) => {
+            this.plugin.settings.relianceEnabled = value;
+            await this.plugin.saveSettings();
+            new Notice(
+              value
+                ? "re.liance.art enabled. Reload Obsidian to see the ribbon button."
+                : "re.liance.art disabled."
+            );
+            this.display();
+          })
+      );
+
+    if (this.plugin.settings.relianceEnabled) {
+      new Setting(containerEl)
+        .setName("Site folder")
+        .setDesc("Vault folder synchronized with the site (holds the section folders and the image folder)")
+        .addText((text) =>
+          text
+            .setPlaceholder("Publications/re.liance.art")
+            .setValue(this.plugin.settings.relianceRoot)
+            .onChange(async (value) => {
+              this.plugin.settings.relianceRoot = value.trim();
+              await this.plugin.saveSettings();
+            })
+        );
     }
 
     new Setting(containerEl).setName("Advanced").setHeading();

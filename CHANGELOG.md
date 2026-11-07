@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Publish to re.liance.art: writes the note as a site article (sections CNV, Regards, Thérapie) into the site's vault folder, with its images; links to articles already on the site are kept. The article goes online at the site's next publication run.
+
 ## [2.4.1] - 2026-11-07
 
 ### Fixed

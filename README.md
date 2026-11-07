@@ -21,6 +21,7 @@
 | **Substack** | ✅ | Draft/publish, images, audience targeting, sections |
 | **WordPress** | ✅ | Multi-server, categories, tags, Rank Math SEO, Polylang |
 | **LinkedIn** | ✅ | Text/article posts, draft support, editable preview |
+| **Static site** | ✅ | Astro, Hugo, Jekyll, Eleventy… whose content lives in a vault folder |
 
 See [PLATFORMS.md](./docs/PLATFORMS.md) for detailed setup and frontmatter documentation.
 
@@ -50,6 +51,12 @@ See [PLATFORMS.md](./docs/PLATFORMS.md) for detailed setup and frontmatter docum
 - **Editable Preview** — Edit content before publishing (3000 char limit)
 - **Draft Support** — Save as draft before publishing
 - **Bilingual Support** — Publish FR or EN version separately
+
+### Static site (vault folder)
+- **No server needed** — Writes the page and its images into the site's folders in your vault; the site's own build puts them online
+- **Configurable** — Sections (vault folder + URL prefix), image folder, frontmatter field names, date format, fixed fields
+- **Clean Markdown** — Obsidian syntax converted: image embeds copied, links to published pages kept, comments and callout markers removed
+- **Safe** — Refuses an address already used by another page and images over the size limit; the address is locked once published
 
 ### General
 - **Markdown Conversion** — Full conversion to platform formats
@@ -97,6 +104,14 @@ See [PLATFORMS.md](./docs/PLATFORMS.md) for detailed setup and frontmatter docum
 2. Enable LinkedIn publishing
 3. Follow the **Setup guide** in settings to get your access token via Postman
 4. Test connection to verify
+
+### Static site
+
+1. Go to **Settings → Content Publisher → Static site (vault folder)** and enable it
+2. Set the site address and add a section per content folder (name, vault folder, URL prefix)
+3. Set the image folder and the URL the site serves it at
+4. Name the page fields as your site expects them (e.g. `title`, `date`) and add fixed fields if needed (e.g. `layout: post`)
+5. Run **Publish to static site** on a note: the page lands in `<section folder>/<address>.md`, and the note records `static_site_path` and `static_site_url`
 
 ---
 

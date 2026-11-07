@@ -1,43 +1,19 @@
 /**
- * re.liance.art — pure conversion of an Obsidian note into a site article file.
+ * Static site (vault folder) — pure conversion of an Obsidian note into a site page file.
  *
- * The site is a static Astro build with no publishing API: an article is a Markdown file
- * dropped into the vault folder of its rubrique, picked up by the site's "Publier les sites" run.
- * Contract (agreed with the site, see reliance repo scripts/dossiers-vault.sh, src/content.config.ts):
- * - one file per article, slug = file name, URL = /<rubrique>/<slug>/
- * - frontmatter: titre, rubrique, type: article, statut: publie, date (+ description, image)
- * - body: plain Markdown (no Obsidian syntax)
- * - images: copied into the vault folder "Images des articles/", served at /images/obsidian/<path>
+ * For static sites (Astro, Hugo, Jekyll, Eleventy…) whose content lives in a vault folder:
+ * publishing writes a Markdown file into the folder of its section, plus its images into the
+ * site's image folder. The site's own build then puts it online.
  */
 
-export const RUBRIQUES = ["cnv", "regards", "therapie"] as const;
-export type Rubrique = (typeof RUBRIQUES)[number];
-
-/** Vault folder of each rubrique, relative to the site's root folder in the vault */
-export const RUBRIQUE_FOLDERS: Record<Rubrique, string> = {
-  cnv: "Articles CNV/articles",
-  regards: "Articles Regards/articles",
-  therapie: "Articles Thérapie/articles"
-};
-
-export const IMAGES_FOLDER = "Images des articles";
-export const IMAGE_URL_PREFIX = "/images/obsidian/";
-export const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "avif", "gif", "svg"];
-/** Larger images are dropped by the site sync, which then breaks the build */
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-export const SITE_URL = "https://re.liance.art";
-
-export function isRubrique(value: unknown): value is Rubrique {
-  return typeof value === "string" && (RUBRIQUES as readonly string[]).includes(value);
-}
+import { StaticSiteConfig } from "./types";
 
 /** Lowercase ASCII letters, digits and single dashes */
 export function slugify(text: string): string {
   return text
-    .replace(/œ/g, "oe")
-    .replace(/Œ/g, "oe")
-    .replace(/æ/g, "ae")
-    .replace(/Æ/g, "ae")
+    .replace(/[œŒ]/g, "oe")
+    .replace(/[æÆ]/g, "ae")
+    .replace(/ß/g, "ss")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
@@ -49,9 +25,28 @@ export function isValidSlug(slug: string): boolean {
   return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug);
 }
 
-export function articleUrl(rubrique: Rubrique, slug: string): string {
-  return `${SITE_URL}/${rubrique}/${slug}/`;
+/** "/x/" form of a URL prefix ("" → "/") */
+export function normalizeUrlPrefix(prefix: string): string {
+  const trimmed = prefix.trim().replace(/^\/+|\/+$/g, "");
+  return trimmed ? `/${trimmed}/` : "/";
 }
+
+/** Vault folder path without leading/trailing slashes */
+export function normalizeFolder(folder: string): string {
+  return folder.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+}
+
+/** Site-relative URL of a page: section prefix + slug + "/" */
+export function pageUrlPath(urlPrefix: string, slug: string): string {
+  return `${normalizeUrlPrefix(urlPrefix)}${slug}/`;
+}
+
+/** Absolute URL of a page, or its site-relative path when no base URL is set */
+export function pageUrl(baseUrl: string, urlPrefix: string, slug: string): string {
+  return `${baseUrl.trim().replace(/\/+$/, "")}${pageUrlPath(urlPrefix, slug)}`;
+}
+
+export const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "avif", "gif", "svg"];
 
 export function extensionOf(path: string): string {
   const name = path.split("/").pop() ?? "";
@@ -67,32 +62,37 @@ export function isImagePath(path: string): boolean {
 export interface LinkResolver {
   /** Vault path of the image a link points to, or null if not found */
   resolveImage(link: string): string | null;
-  /** Site path ("/<rubrique>/<slug>/") of a note published on re.liance.art, or null */
-  resolveArticle(link: string): string | null;
+  /** Site-relative URL of a note published on the site, or null */
+  resolvePage(link: string): string | null;
 }
 
-export interface ArticleImage {
+export interface PageImage {
   /** Vault path of the source image */
   vaultPath: string;
-  /** Path inside the images folder: "<slug>/<name>" */
+  /** Path inside the site's image folder: "<slug>/<name>" */
   sitePath: string;
-  /** URL used in the article: "/images/obsidian/<slug>/<name>" */
+  /** URL used in the page */
   url: string;
 }
 
 export interface ConvertedBody {
   body: string;
-  images: ArticleImage[];
   warnings: string[];
 }
 
-/** Collects the images of one article and gives each a unique, URL-safe name */
+/** Collects the images of one page and gives each a unique, URL-safe name */
 export class ImageCollector {
-  readonly images: ArticleImage[] = [];
+  readonly images: PageImage[] = [];
+  private readonly urlPrefix: string;
 
-  constructor(private readonly slug: string) {}
+  constructor(
+    private readonly slug: string,
+    imagesUrlPrefix: string
+  ) {
+    this.urlPrefix = normalizeUrlPrefix(imagesUrlPrefix);
+  }
 
-  add(vaultPath: string): ArticleImage {
+  add(vaultPath: string): PageImage {
     const existing = this.images.find((i) => i.vaultPath === vaultPath);
     if (existing) return existing;
 
@@ -104,7 +104,7 @@ export class ImageCollector {
       name = `${base}-${n}.${ext}`;
     }
     const sitePath = `${this.slug}/${name}`;
-    const image = { vaultPath, sitePath, url: `${IMAGE_URL_PREFIX}${sitePath}` };
+    const image = { vaultPath, sitePath, url: `${this.urlPrefix}${sitePath}` };
     this.images.push(image);
     return image;
   }
@@ -163,28 +163,28 @@ function convertProse(
     return `![${alt}](${collector.add(vaultPath).url})`;
   });
 
-  // Wikilinks: link to the article when the target is published on the site, plain text otherwise
+  // Wikilinks: link to the page when the target is published on the site, plain text otherwise
   out = out.replace(/\[\[([^\]]+)\]\]/g, (_match: string, inner: string) => {
     const pipe = inner.indexOf("|");
     const target = pipe >= 0 ? inner.slice(0, pipe) : inner;
     const alias = pipe >= 0 ? inner.slice(pipe + 1).trim() : "";
     const [file, heading] = target.split("#");
     const text = alias || heading?.trim() || (file ?? "").trim().split("/").pop() || target;
-    const url = resolver.resolveArticle(linkPath(target));
+    const url = resolver.resolvePage(linkPath(target));
     return url ? `[${text}](${url})` : text;
   });
 
-  // Markdown links to local notes: same rule as wikilinks (a dead link would stop the site build)
+  // Markdown links to local notes: same rule as wikilinks (avoids dead links)
   out = out.replace(
     /(^|[^!])\[([^\]]+)\]\(<?([^)>\s]+\.md)(#[^)>\s]*)?>?\)/g,
     (match: string, before: string, text: string, path: string) => {
       if (!isLocal(path)) return match;
-      const url = resolver.resolveArticle(decodeURI(path).replace(/\.md$/, ""));
+      const url = resolver.resolvePage(decodeURI(path).replace(/\.md$/, ""));
       return url ? `${before}[${text}](${url})` : `${before}${text}`;
     }
   );
 
-  // Highlights and callout markers have no rendering on the site
+  // Highlights and callout markers are Obsidian-only
   out = out.replace(/==([^=\n]+)==/g, "$1");
   out = out.replace(/^(\s*>\s*)\[![^\]]+\][+-]?[ \t]*(.*)$/gm, (_m: string, quote: string, title: string) =>
     title.trim() ? `${quote}**${title.trim()}**` : quote.trimEnd()
@@ -193,9 +193,9 @@ function convertProse(
   return out;
 }
 
-/** Applies fn to the parts of a line outside inline code spans */
-function outsideInlineCode(line: string, fn: (text: string) => string): string {
-  return line
+/** Applies fn to the parts of a text outside inline code spans */
+function outsideInlineCode(text: string, fn: (text: string) => string): string {
+  return text
     .split(/(`+[^`]*`+)/)
     .map((part, i) => (i % 2 === 1 ? part : fn(part)))
     .join("");
@@ -203,13 +203,12 @@ function outsideInlineCode(line: string, fn: (text: string) => string): string {
 
 /**
  * Converts the note body into plain Markdown for the site.
- * Code blocks and inline code are left untouched.
+ * Images are registered in the collector; code blocks and inline code are left untouched.
  */
 export function convertBody(
   markdown: string,
-  slug: string,
   resolver: LinkResolver,
-  collector: ImageCollector = new ImageCollector(slug)
+  collector: ImageCollector
 ): ConvertedBody {
   const warnings: string[] = [];
   const lines = stripFrontmatter(markdown).split(/\r?\n/);
@@ -219,10 +218,8 @@ export function convertBody(
 
   const flushProse = (): void => {
     if (!prose.length) return;
-    // Comments may span lines: convert the whole prose segment at once, inline code protected
-    const text = prose.join("\n");
-    const converted = outsideInlineCode(text, (t) => convertProse(t, resolver, collector, warnings));
-    out.push(converted);
+    // Comments may span lines: convert the whole prose segment at once
+    out.push(outsideInlineCode(prose.join("\n"), (t) => convertProse(t, resolver, collector, warnings)));
     prose = [];
   };
 
@@ -242,36 +239,57 @@ export function convertBody(
   flushProse();
 
   const body = `${out.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
-  return { body, images: [...collector.images], warnings };
+  return { body, warnings };
 }
 
-export interface ArticleFields {
-  titre: string;
-  rubrique: Rubrique;
-  date: string;
-  description?: string;
-  image?: string;
+/** YAML scalar: plain when unambiguous, JSON-quoted (valid YAML) otherwise */
+export function yamlScalar(value: string): string {
+  return /^[A-Za-z0-9_./-]+$/.test(value) && !/^(true|false|null|yes|no|on|off|~)$/i.test(value)
+    ? value
+    : JSON.stringify(value);
 }
 
-/** Builds the article file: frontmatter accepted by the site's schema + body */
-export function buildArticleFile(fields: ArticleFields, body: string): string {
-  // JSON strings are valid YAML double-quoted scalars
-  const lines = [
-    "---",
-    `titre: ${JSON.stringify(fields.titre)}`,
-    `rubrique: ${fields.rubrique}`,
-    "type: article",
-    "statut: publie",
-    `date: ${fields.date}`
-  ];
-  if (fields.description) lines.push(`description: ${JSON.stringify(fields.description)}`);
-  if (fields.image) lines.push(`image: ${JSON.stringify(fields.image)}`);
+/**
+ * Builds the page file: frontmatter from ordered key/value pairs, then the body.
+ * Values in `raw` are written as is (dates), the others as YAML strings.
+ */
+export function buildPageFile(
+  fields: Array<{ key: string; value: string; raw?: boolean }>,
+  body: string
+): string {
+  const lines = ["---"];
+  const seen = new Set<string>();
+  for (const { key, value, raw } of fields) {
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    lines.push(`${key}: ${raw ? value : yamlScalar(value)}`);
+  }
   lines.push("---", "");
   return lines.join("\n") + body;
 }
 
-/** Local date as YYYY-MM-DD */
-export function today(now: Date = new Date()): string {
+/** Formats a date with YYYY, MM and DD tokens (local time) */
+export function formatDate(format: string, now: Date = new Date()): string {
   const pad = (n: number): string => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return (format || "YYYY-MM-DD")
+    .replace(/YYYY/g, String(now.getFullYear()))
+    .replace(/MM/g, pad(now.getMonth() + 1))
+    .replace(/DD/g, pad(now.getDate()));
+}
+
+/** Page fields, in frontmatter order, according to the site configuration */
+export function pageFields(
+  config: StaticSiteConfig,
+  page: { title: string; section: string; date: string; description?: string; cover?: string }
+): Array<{ key: string; value: string; raw?: boolean }> {
+  const f = config.fields;
+  const fields: Array<{ key: string; value: string; raw?: boolean }> = [
+    { key: f.title, value: page.title },
+    { key: f.section, value: page.section },
+    ...config.fixedFields.map((x) => ({ key: x.key.trim(), value: x.value })),
+    { key: f.date, value: page.date, raw: true }
+  ];
+  if (page.description) fields.push({ key: f.description, value: page.description });
+  if (page.cover) fields.push({ key: f.cover, value: page.cover });
+  return fields.filter((x) => x.key.trim());
 }

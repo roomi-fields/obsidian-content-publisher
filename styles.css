@@ -767,3 +767,13 @@
 
 /* TikZ rendering */
 .tikz-render-container { position: fixed; left: -9999px; top: -9999px; }
+
+/* Static site settings: one row per section / fixed field */
+.static-site-row .setting-item-info {
+  display: none;
+}
+
+.static-site-row .setting-item-control {
+  flex: 1;
+  justify-content: flex-start;
+}

@@ -24,7 +24,10 @@ import { convertMarkdownToHtml } from "./src/wordpress/markdownConverter";
 import { LinkedInAPI } from "./src/linkedin/api";
 import { LinkedInPostComposer } from "./src/linkedin/PostComposer";
 import { LinkedInVisibility } from "./src/linkedin/types";
-import { ReliancePostComposer } from "./src/reliance/PostComposer";
+import { StaticSitePostComposer } from "./src/staticsite/PostComposer";
+import { normalizeFolder } from "./src/staticsite/converter";
+import { renderStaticSiteSettings } from "./src/staticsite/settingsTab";
+import { DEFAULT_STATIC_SITE, StaticSiteConfig } from "./src/staticsite/types";
 
 interface SubstackPublisherSettings {
   devMode: boolean;
@@ -53,9 +56,8 @@ interface SubstackPublisherSettings {
   linkedinAccessToken: string;
   linkedinPersonId: string;
   linkedinDefaultVisibility: LinkedInVisibility;
-  // re.liance.art settings
-  relianceEnabled: boolean;
-  relianceRoot: string;
+  // Static site (vault folder) settings
+  staticSite: StaticSiteConfig;
 }
 
 const DEFAULT_SETTINGS: SubstackPublisherSettings = {
@@ -85,9 +87,7 @@ const DEFAULT_SETTINGS: SubstackPublisherSettings = {
   linkedinAccessToken: "",
   linkedinPersonId: "",
   linkedinDefaultVisibility: "PUBLIC",
-  // re.liance.art defaults
-  relianceEnabled: false,
-  relianceRoot: "Publications/re.liance.art"
+  staticSite: DEFAULT_STATIC_SITE
 };
 
 export default class SubstackPublisherPlugin extends Plugin {
@@ -157,18 +157,18 @@ export default class SubstackPublisherPlugin extends Plugin {
       });
     }
 
-    // re.liance.art ribbon icon (only if enabled)
-    if (this.settings.relianceEnabled) {
-      const reRibbonIconEl = this.addRibbonIcon(
+    // Static site ribbon icon (only if enabled)
+    if (this.settings.staticSite.enabled) {
+      const siteRibbonIconEl = this.addRibbonIcon(
         "book-open",
-        "Publish to re.liance.art",
+        "Publish to static site",
         () => {
-          this.publishToReliance();
+          this.publishToStaticSite();
         }
       );
       this.app.workspace.onLayoutReady(() => {
         activeWindow.setTimeout(() => {
-          reRibbonIconEl.parentElement?.appendChild(reRibbonIconEl);
+          siteRibbonIconEl.parentElement?.appendChild(siteRibbonIconEl);
         }, 100);
       });
     }
@@ -205,10 +205,10 @@ export default class SubstackPublisherPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "publish-to-reliance",
-      name: "Publish to re.liance.art",
+      id: "publish-to-static-site",
+      name: "Publish to static site",
       callback: () => {
-        this.publishToReliance();
+        this.publishToStaticSite();
       }
     });
 
@@ -251,7 +251,15 @@ export default class SubstackPublisherPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const data = ((await this.loadData()) ?? {}) as Partial<SubstackPublisherSettings>;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+    // Nested settings: fresh copy of the defaults, completed field by field
+    const defaults = structuredClone(DEFAULT_STATIC_SITE);
+    this.settings.staticSite = {
+      ...defaults,
+      ...data.staticSite,
+      fields: { ...defaults.fields, ...data.staticSite?.fields }
+    };
 
     // Migration: convert old single-server config to multi-server
     if (
@@ -398,21 +406,27 @@ export default class SubstackPublisherPlugin extends Plugin {
     composer.open();
   }
 
-  private publishToReliance(): void {
-    this.logger.logCommandExecution("publish-to-reliance");
+  private publishToStaticSite(): void {
+    this.logger.logCommandExecution("publish-to-static-site");
 
-    if (!this.settings.relianceEnabled) {
-      new Notice("re.liance.art publishing is not enabled. Enable it in settings.");
+    const config = this.settings.staticSite;
+    if (!config.enabled) {
+      new Notice("Static site publishing is not enabled. Enable it in settings.");
+      return;
+    }
+    const missing = config.sections.filter(
+      (s) => s.name && !(this.app.vault.getAbstractFileByPath(normalizeFolder(s.folder)) instanceof TFolder)
+    );
+    if (!config.sections.some((s) => s.name && s.folder)) {
+      new Notice("Add at least one section of the static site in settings.");
+      return;
+    }
+    if (missing.length) {
+      new Notice(`Section folder not found in the vault: ${missing.map((s) => s.folder).join(", ")}`);
       return;
     }
 
-    const root = this.settings.relianceRoot.trim().replace(/^\/+|\/+$/g, "");
-    if (!(this.app.vault.getAbstractFileByPath(root) instanceof TFolder)) {
-      new Notice(`re.liance.art folder not found in the vault: ${root}. Check the settings.`);
-      return;
-    }
-
-    new ReliancePostComposer(this.app, root).open();
+    new StaticSitePostComposer(this.app, config).open();
   }
 
   /**
@@ -2298,41 +2312,12 @@ class SubstackPublisherSettingTab extends PluginSettingTab {
         });
     }
 
-    // re.liance.art Section
-    new Setting(containerEl).setName("re.liance.art").setHeading();
-
-    new Setting(containerEl)
-      .setName("Enable re.liance.art")
-      .setDesc("Publish notes as articles of the re.liance.art site (shows a button in the ribbon)")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.relianceEnabled)
-          .onChange(async (value) => {
-            this.plugin.settings.relianceEnabled = value;
-            await this.plugin.saveSettings();
-            new Notice(
-              value
-                ? "re.liance.art enabled. Reload Obsidian to see the ribbon button."
-                : "re.liance.art disabled."
-            );
-            this.display();
-          })
-      );
-
-    if (this.plugin.settings.relianceEnabled) {
-      new Setting(containerEl)
-        .setName("Site folder")
-        .setDesc("Vault folder synchronized with the site (holds the section folders and the image folder)")
-        .addText((text) =>
-          text
-            .setPlaceholder("Publications/re.liance.art")
-            .setValue(this.plugin.settings.relianceRoot)
-            .onChange(async (value) => {
-              this.plugin.settings.relianceRoot = value.trim();
-              await this.plugin.saveSettings();
-            })
-        );
-    }
+    renderStaticSiteSettings(
+      containerEl,
+      this.plugin.settings.staticSite,
+      () => this.plugin.saveSettings(),
+      () => this.display()
+    );
 
     new Setting(containerEl).setName("Advanced").setHeading();
 

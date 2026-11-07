@@ -277,6 +277,18 @@ export function formatDate(format: string, now: Date = new Date()): string {
     .replace(/DD/g, pad(now.getDate()));
 }
 
+/**
+ * Ticks the "- [ ] <label>" checkbox of a note (any list marker). Returns null when the
+ * checkbox is not in the note; an already ticked checkbox is left as is.
+ */
+export function tickCheckbox(content: string, label: string): string | null {
+  const escaped = label.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const box = new RegExp(`^(\\s*[-*+] \\[)([ xX])(\\] ${escaped}\\s*)$`, "m");
+  const match = box.exec(content);
+  if (!match) return null;
+  return content.replace(box, "$1x$3");
+}
+
 /** Page fields, in frontmatter order, according to the site configuration */
 export function pageFields(
   config: StaticSiteConfig,

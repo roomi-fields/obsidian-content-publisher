@@ -111,7 +111,8 @@ See [PLATFORMS.md](./docs/PLATFORMS.md) for detailed setup and frontmatter docum
 2. Set the site address and add a section per content folder (name, vault folder, URL prefix)
 3. Set the image folder and the URL the site serves it at
 4. Name the page fields as your site expects them (e.g. `title`, `date`) and add fixed fields if needed (e.g. `layout: post`)
-5. Run **Publish to static site** on a note: the page lands in `<section folder>/<address>.md`, and the note records `static_site_path` and `static_site_url`
+5. Optional: if your site builds when a checkbox of a note is ticked (watched by a script), set **Build trigger note** and **Build trigger checkbox**: the plugin ticks it after publishing
+6. Run **Publish to static site** on a note: the page lands in `<section folder>/<address>.md`, and the note records `static_site_path` and `static_site_url`
 
 ---
 

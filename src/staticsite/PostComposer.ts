@@ -171,7 +171,12 @@ export class StaticSitePostComposer extends Modal {
         ...(this.coverImage ? { coverImage: this.coverImage } : {})
       });
       for (const warning of result.warnings) new Notice(warning, 8000);
-      new Notice(`Page written: ${result.path}\nIt goes online with the site's next build (${result.url}).`, 8000);
+      new Notice(
+        result.deployNote
+          ? `Page written: ${result.path}\nSite build started (${result.deployNote}): online shortly at ${result.url}`
+          : `Page written: ${result.path}\nIt goes online with the site's next build (${result.url}).`,
+        8000
+      );
       this.close();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

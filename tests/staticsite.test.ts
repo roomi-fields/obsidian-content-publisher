@@ -10,6 +10,7 @@ import {
   pageFields,
   pageUrl,
   slugify,
+  tickCheckbox,
   yamlScalar
 } from "../src/staticsite/converter";
 import { DEFAULT_STATIC_SITE, StaticSiteConfig } from "../src/staticsite/types";
@@ -169,5 +170,20 @@ describe("formatDate", () => {
   it("applies YYYY, MM, DD tokens", () => {
     expect(formatDate("YYYY-MM-DD", new Date(2026, 0, 5))).toBe("2026-01-05");
     expect(formatDate("DD/MM/YYYY", new Date(2026, 0, 5))).toBe("05/01/2026");
+  });
+});
+
+describe("tickCheckbox", () => {
+  const note = "# Publier\n\n- [ ] Mettre en ligne re.liance.art\n- [ ] Mettre en ligne noos-ia.com\n";
+
+  it("ticks only the labelled checkbox", () => {
+    expect(tickCheckbox(note, "Mettre en ligne re.liance.art")).toBe(
+      "# Publier\n\n- [x] Mettre en ligne re.liance.art\n- [ ] Mettre en ligne noos-ia.com\n"
+    );
+  });
+
+  it("keeps a ticked checkbox and reports a missing one", () => {
+    expect(tickCheckbox("* [X] Deploy (prod)", "Deploy (prod)")).toBe("* [x] Deploy (prod)");
+    expect(tickCheckbox(note, "Mettre en ligne re.liance")).toBeNull();
   });
 });

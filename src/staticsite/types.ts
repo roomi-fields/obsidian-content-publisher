@@ -31,6 +31,12 @@ export interface StaticSiteConfig {
   dateFormat: string;
   /** Fields written as is in every page (e.g. layout: post, draft: false) */
   fixedFields: Array<{ key: string; value: string }>;
+  /**
+   * Optional deploy trigger: after publishing, tick the "- [ ] <label>" checkbox of this note
+   * (for sites whose build is started by a watcher of that note)
+   */
+  deployNote: string;
+  deployCheckbox: string;
 }
 
 export const DEFAULT_STATIC_SITE: StaticSiteConfig = {
@@ -48,5 +54,7 @@ export const DEFAULT_STATIC_SITE: StaticSiteConfig = {
     cover: "image"
   },
   dateFormat: "YYYY-MM-DD",
-  fixedFields: []
+  fixedFields: [],
+  deployNote: "",
+  deployCheckbox: ""
 };

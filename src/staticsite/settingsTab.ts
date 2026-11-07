@@ -139,6 +139,19 @@ export function renderStaticSiteSettings(
     config.dateFormat = v;
   }, "YYYY-MM-DD");
 
+  text(
+    "Build trigger note",
+    "Optional: after publishing, tick a checkbox in this note (for a site whose build watches it)",
+    () => config.deployNote,
+    (v) => {
+      config.deployNote = v;
+    },
+    "Publish/Deploy.md"
+  );
+  text("Build trigger checkbox", "Text of the checkbox to tick, without “- [ ]”", () => config.deployCheckbox, (v) => {
+    config.deployCheckbox = v;
+  });
+
   new Setting(containerEl)
     .setName("Fixed fields")
     .setDesc("Written as is in every page, for example a layout field")

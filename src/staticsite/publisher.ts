@@ -9,6 +9,7 @@ import {
   isValidSlug,
   normalizeFolder,
   pageFields,
+  tickCheckbox,
   pageUrl,
   pageUrlPath
 } from "./converter";
@@ -27,6 +28,8 @@ export interface StaticPublishResult {
   url: string;
   path: string;
   warnings: string[];
+  /** Note whose checkbox was ticked to start the site's build, if configured */
+  deployNote?: string;
 }
 
 /** Source-note frontmatter keys recording where the note is published */
@@ -161,7 +164,32 @@ export class StaticSitePublisher {
       fm[URL_KEY] = url;
     });
 
-    return { url, path, warnings: converted.warnings };
+    const deployNote = await this.triggerDeploy(converted.warnings);
+    return { url, path, warnings: converted.warnings, ...(deployNote ? { deployNote } : {}) };
+  }
+
+  /** Ticks the configured checkbox that starts the site's build; returns the note path when done */
+  private async triggerDeploy(warnings: string[]): Promise<string | null> {
+    const notePath = normalizeFolder(this.config.deployNote);
+    const label = this.config.deployCheckbox.trim();
+    if (!notePath || !label) return null;
+    const path = notePath.endsWith(".md") ? notePath : `${notePath}.md`;
+    const note = this.app.vault.getAbstractFileByPath(path);
+    if (!(note instanceof TFile)) {
+      warnings.push(`Site not put online: note not found (${path})`);
+      return null;
+    }
+    let found = true;
+    await this.app.vault.process(note, (content) => {
+      const ticked = tickCheckbox(content, label);
+      found = ticked !== null;
+      return ticked ?? content;
+    });
+    if (!found) {
+      warnings.push(`Site not put online: no “${label}” checkbox in ${path}`);
+      return null;
+    }
+    return path;
   }
 
   /** The first publication date is kept on republish */

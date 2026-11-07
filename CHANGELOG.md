@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Publish to a static site whose content lives in a vault folder (Astro, Hugo, Jekyll, Eleventy…): writes the page into its section folder and its images into the site's image folder, for the site's own build to put online. Sections, image folder, frontmatter field names, date format and fixed fields are configurable. Obsidian syntax is converted to plain Markdown; links to published pages are kept; an address used by another page or an oversized image is refused.
 
+### Removed
+
+- The editorial pipeline file-menu action ("Restart editorial pipeline") and its NotebookLM notebook management, tied to a private local setup.
+
 ## [2.4.1] - 2026-11-07
 
 ### Fixed

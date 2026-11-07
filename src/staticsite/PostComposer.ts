@@ -116,10 +116,11 @@ export class StaticSitePostComposer extends Modal {
 
     const images = this.publisher.listNoteImages(file);
     if (images.length && this.config.fields.cover) {
+      this.coverImage = this.publisher.noteCover(file) ?? "";
       new Setting(contentEl).setName("Cover image").addDropdown((d) => {
         d.addOption("", "None");
         for (const path of images) d.addOption(path, path.split("/").pop() ?? path);
-        d.setValue("").onChange((value) => {
+        d.setValue(this.coverImage).onChange((value) => {
           this.coverImage = value;
         });
       });

@@ -75,12 +75,22 @@ export class StaticSitePublisher {
   /** Images found in the note, for choosing a cover */
   listNoteImages(file: TFile): string[] {
     const cache = this.app.metadataCache.getFileCache(file);
-    const links = [...(cache?.embeds ?? []), ...(cache?.links ?? [])];
+    const links = [...(cache?.frontmatterLinks ?? []), ...(cache?.embeds ?? []), ...(cache?.links ?? [])];
     const paths = links
       .map((l) => this.app.metadataCache.getFirstLinkpathDest(l.link.split("#")[0] ?? "", file.path))
       .filter((f): f is TFile => !!f && isImagePath(f.path))
       .map((f) => f.path);
     return [...new Set(paths)];
+  }
+
+  /** Image linked from the note's cover field (e.g. image: "[[photo.png]]"), if any */
+  noteCover(file: TFile): string | null {
+    const key = this.config.fields.cover;
+    const link = this.app.metadataCache.getFileCache(file)?.frontmatterLinks?.find((l) => l.key === key);
+    const target = link
+      ? this.app.metadataCache.getFirstLinkpathDest(link.link.split("#")[0] ?? "", file.path)
+      : null;
+    return target && isImagePath(target.path) ? target.path : null;
   }
 
   /** A page that is not this note's own already exists at this address */

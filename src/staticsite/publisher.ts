@@ -128,10 +128,15 @@ export class StaticSitePublisher {
     };
 
     const collector = new ImageCollector(slug, this.config.imagesUrlPrefix);
-    const converted = convertBody(await this.app.vault.read(file), resolver, collector);
-    const cover = options.coverImage ? collector.add(options.coverImage) : undefined;
+    const converted = convertBody(await this.app.vault.read(file), resolver, collector, this.config.keepVaultImages);
+    // Keep the cover as an Obsidian [[...]] link when embeds are kept; otherwise copy it and use its URL
+    const cover = options.coverImage
+      ? this.config.keepVaultImages
+        ? `[[${options.coverImage}]]`
+        : collector.add(options.coverImage).url
+      : undefined;
     const images = collector.images;
-    this.checkImages(images);
+    if (!this.config.keepVaultImages) this.checkImages(images);
 
     const path = this.pagePath(section, slug);
     const existing = this.app.vault.getAbstractFileByPath(path);
@@ -142,12 +147,12 @@ export class StaticSitePublisher {
         copied: this.copiedFields(file),
         date: this.keptDate(existing) ?? formatDate(this.config.dateFormat),
         ...(options.description ? { description: options.description } : {}),
-        ...(cover ? { cover: cover.url } : {})
+        ...(cover ? { cover } : {})
       }),
       converted.body
     );
 
-    await this.writeImages(slug, images);
+    if (!this.config.keepVaultImages) await this.writeImages(slug, images);
     await this.ensureFolder(normalizeFolder(section.folder));
     if (existing instanceof TFile) {
       await this.app.vault.modify(existing, content);

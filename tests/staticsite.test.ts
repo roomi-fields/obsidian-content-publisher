@@ -115,6 +115,18 @@ describe("convertBody", () => {
         "`[[Autre article]]` et [Autre article](/blog/autre-article/)\n"
     );
   });
+
+  it("keeps Obsidian image embeds untouched when keepImages is set (still converts page links)", () => {
+    const collector = new ImageCollector("mon-article", "/images/");
+    const md = "![[_Assets/Illustrations/photo.png]]\n![alt](img/a%20b.jpg)\n[[Autre article]]";
+    const { body } = convertBody(md, resolver, collector, true);
+    expect(body).toBe(
+      "![[_Assets/Illustrations/photo.png]]\n" +
+        "![alt](img/a%20b.jpg)\n" +
+        "[Autre article](/blog/autre-article/)\n"
+    );
+    expect(collector.images).toHaveLength(0); // aucune image collectée, donc rien à copier
+  });
 });
 
 describe("page file", () => {

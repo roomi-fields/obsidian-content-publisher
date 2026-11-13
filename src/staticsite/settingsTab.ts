@@ -105,25 +105,42 @@ export function renderStaticSiteSettings(
   });
 
   // Images
-  text("Image folder", "Vault folder the site serves images from; each page gets a sub-folder named after its address",
-    () => config.imagesFolder, (v) => {
-      config.imagesFolder = v;
-    });
-  text("Image URL prefix", "Address at which the site serves that folder", () => config.imagesUrlPrefix, (v) => {
-    config.imagesUrlPrefix = v;
-  }, "/images/");
   new Setting(containerEl)
-    .setName("Maximum image size in megabytes")
-    .setDesc("Larger images are refused; 0 for no limit")
-    .addText((t) =>
-      t.setValue(String(config.maxImageMB)).onChange(async (v) => {
-        const n = Number(v);
-        if (Number.isFinite(n) && n >= 0) {
-          config.maxImageMB = n;
-          await save();
-        }
+    .setName("Keep Obsidian embeds")
+    .setDesc(
+      "Leave images as Obsidian embeds (![[...]]) and the cover as a [[...]] link instead of copying them " +
+        "and rewriting their references to URLs. For a site whose own build resolves Obsidian embeds, so the " +
+        "note stays viewable in Obsidian after publishing."
+    )
+    .addToggle((toggle) =>
+      toggle.setValue(config.keepVaultImages).onChange(async (value) => {
+        config.keepVaultImages = value;
+        await save();
+        redisplay();
       })
     );
+
+  if (!config.keepVaultImages) {
+    text("Image folder", "Vault folder the site serves images from; each page gets a sub-folder named after its address",
+      () => config.imagesFolder, (v) => {
+        config.imagesFolder = v;
+      });
+    text("Image URL prefix", "Address at which the site serves that folder", () => config.imagesUrlPrefix, (v) => {
+      config.imagesUrlPrefix = v;
+    }, "/images/");
+    new Setting(containerEl)
+      .setName("Maximum image size in megabytes")
+      .setDesc("Larger images are refused; 0 for no limit")
+      .addText((t) =>
+        t.setValue(String(config.maxImageMB)).onChange(async (v) => {
+          const n = Number(v);
+          if (Number.isFinite(n) && n >= 0) {
+            config.maxImageMB = n;
+            await save();
+          }
+        })
+      );
+  }
 
   // Frontmatter
   new Setting(containerEl)

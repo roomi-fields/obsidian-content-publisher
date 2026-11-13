@@ -19,6 +19,12 @@ export interface StaticSiteConfig {
   imagesFolder: string;
   /** URL prefix the site serves that folder at (e.g. "/images/") */
   imagesUrlPrefix: string;
+  /**
+   * Keep Obsidian image embeds (![[...]]) and the cover as a [[...]] link, instead of copying the
+   * images into the image folder and rewriting their references to URLs. For a site whose own build
+   * resolves Obsidian embeds (so the note stays viewable in Obsidian after publishing).
+   */
+  keepVaultImages: boolean;
   /** Larger images are refused (the site may not take them) */
   maxImageMB: number;
   /** Frontmatter key for each page field; an empty key leaves the field out */
@@ -49,6 +55,7 @@ export const DEFAULT_STATIC_SITE: StaticSiteConfig = {
   sections: [],
   imagesFolder: "",
   imagesUrlPrefix: "/images/",
+  keepVaultImages: false,
   maxImageMB: 5,
   fields: {
     title: "title",

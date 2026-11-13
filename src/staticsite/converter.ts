@@ -128,15 +128,19 @@ function convertProse(
   text: string,
   resolver: LinkResolver,
   collector: ImageCollector,
-  warnings: string[]
+  warnings: string[],
+  keepImages: boolean
 ): string {
   let out = text.replace(/%%[\s\S]*?%%/g, "");
+
+  // When the site's build resolves Obsidian embeds itself (keepImages), images are left untouched:
+  // no copy, no URL rewrite, so the note stays viewable in Obsidian after publishing.
 
   // Markdown images with a local path: ![alt](path "title") — before embeds, whose output it would re-read
   out = out.replace(
     /!\[([^\]]*)\]\(<?([^)>\s]+)>?((?:\s+"[^"]*")?)\)/g,
     (match: string, alt: string, path: string, title: string) => {
-      if (!isLocal(path)) return match;
+      if (keepImages || !isLocal(path)) return match;
       const vaultPath = resolver.resolveImage(decodeURI(path));
       if (!vaultPath) {
         warnings.push(`Image not found in the vault: ${path}`);
@@ -148,6 +152,7 @@ function convertProse(
 
   // Embeds: ![[image.png|alt or width]] → image; other embeds cannot be rendered on the site
   out = out.replace(/!\[\[([^\]]+)\]\]/g, (match: string, inner: string) => {
+    if (keepImages) return match; // laissé verbatim ; le lien plus bas ne le touche pas (lookbehind)
     const path = linkPath(inner);
     const option = inner.includes("|") ? inner.slice(inner.indexOf("|") + 1).trim() : "";
     if (!isImagePath(path)) {
@@ -163,8 +168,9 @@ function convertProse(
     return `![${alt}](${collector.add(vaultPath).url})`;
   });
 
-  // Wikilinks: link to the page when the target is published on the site, plain text otherwise
-  out = out.replace(/\[\[([^\]]+)\]\]/g, (_match: string, inner: string) => {
+  // Wikilinks: link to the page when the target is published on the site, plain text otherwise.
+  // Not preceded by "!" — an image embed ![[...]] kept verbatim must stay untouched.
+  out = out.replace(/(?<!!)\[\[([^\]]+)\]\]/g, (_match: string, inner: string) => {
     const pipe = inner.indexOf("|");
     const target = pipe >= 0 ? inner.slice(0, pipe) : inner;
     const alias = pipe >= 0 ? inner.slice(pipe + 1).trim() : "";
@@ -208,7 +214,8 @@ function outsideInlineCode(text: string, fn: (text: string) => string): string {
 export function convertBody(
   markdown: string,
   resolver: LinkResolver,
-  collector: ImageCollector
+  collector: ImageCollector,
+  keepImages = false
 ): ConvertedBody {
   const warnings: string[] = [];
   const lines = stripFrontmatter(markdown).split(/\r?\n/);
@@ -219,7 +226,7 @@ export function convertBody(
   const flushProse = (): void => {
     if (!prose.length) return;
     // Comments may span lines: convert the whole prose segment at once
-    out.push(outsideInlineCode(prose.join("\n"), (t) => convertProse(t, resolver, collector, warnings)));
+    out.push(outsideInlineCode(prose.join("\n"), (t) => convertProse(t, resolver, collector, warnings, keepImages)));
     prose = [];
   };
 

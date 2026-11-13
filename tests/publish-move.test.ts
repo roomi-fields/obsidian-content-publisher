@@ -114,4 +114,27 @@ describe("StaticSitePublisher.publish — déplace, ne double pas", () => {
     ).rejects.toThrow(/already exists/);
     expect(map.has("Brouillons/autre.md")).toBe(true); // brouillon intact après l'échec
   });
+
+  it("garde les embeds Obsidian quand keepVaultImages est activé", async () => {
+    const draft = new FakeFile(
+      "Brouillons/mon-article.md",
+      "---\ntitle: Mon article\n---\n\n![[_Assets/Illustrations/photo.png]]\n\nCorps.",
+      { title: "Mon article" }
+    );
+    const { app, map } = makeApp([draft]);
+    const publisher = new StaticSitePublisher(app, { ...config, keepVaultImages: true });
+
+    await publisher.publish(draft, {
+      section: "cnv",
+      slug: "mon-article",
+      title: "Mon article",
+      coverImage: "_Assets/Illustrations/photo.png"
+    });
+
+    const page = map.get("Site/CNV/mon-article.md")!;
+    expect(page.data).toContain("![[_Assets/Illustrations/photo.png]]"); // embed intact
+    expect(page.data).toContain('image: "[[_Assets/Illustrations/photo.png]]"'); // cadre en lien Obsidian
+    expect(page.data).not.toContain("/images/"); // aucune URL réécrite
+    expect([...map.keys()].some((p) => p.includes("Images") || /\.(png|webp|jpg)$/.test(p))).toBe(false); // aucune image copiée
+  });
 });

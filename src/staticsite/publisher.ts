@@ -33,14 +33,10 @@ export interface StaticPublishResult {
   deployNote?: string;
 }
 
-/** Source-note frontmatter keys recording where the note is published */
-export const PATH_KEY = "static_site_path";
-export const URL_KEY = "static_site_url";
-
 /**
  * Publishes a note to a static site whose content lives in the vault: writes the page
- * file into its section folder and its images into the site's image folder. The site's
- * own build puts it online.
+ * file into its section folder and its images into the site's image folder, then removes
+ * the source draft (the note is moved, not copied). The site's own build puts it online.
  */
 export class StaticSitePublisher {
   constructor(
@@ -60,14 +56,13 @@ export class StaticSitePublisher {
     return normalizePath(`${normalizeFolder(section.folder)}/${slug}.md`);
   }
 
-  /** "<section>/<slug>" recorded in a note's frontmatter, if it still matches a section */
+  /**
+   * Where this note is published, if it is itself a page of the site. Since publishing
+   * moves the note into its section folder, a note is "published" exactly when it lives
+   * at a section's page path.
+   */
   publishedPath(file: TFile): { section: StaticSiteSection; slug: string } | null {
-    const value: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.[PATH_KEY];
-    if (typeof value !== "string") return null;
-    const cut = value.lastIndexOf("/");
-    const section = this.section(value.slice(0, cut));
-    const slug = value.slice(cut + 1);
-    return section && isValidSlug(slug) ? { section, slug } : null;
+    return this.sitePage(file);
   }
 
   /** A page file of the site itself, in one of its section folders */
@@ -127,7 +122,7 @@ export class StaticSitePublisher {
       resolvePage: (link: string): string | null => {
         const target = this.app.metadataCache.getFirstLinkpathDest(link, file.path);
         if (!target) return null;
-        const page = this.publishedPath(target) ?? this.sitePage(target);
+        const page = this.publishedPath(target);
         return page ? pageUrlPath(page.section.urlPrefix, page.slug) : null;
       }
     };
@@ -160,12 +155,13 @@ export class StaticSitePublisher {
       await this.app.vault.create(path, content);
     }
 
-    const url = pageUrl(this.config.baseUrl, section.urlPrefix, slug);
-    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-      fm[PATH_KEY] = `${section.name}/${slug}`;
-      fm[URL_KEY] = url;
-    });
+    // Move, not copy: the page now lives safely in its section folder, so remove the
+    // source draft — unless we just republished a page in place (source is the page).
+    if (file.path !== path) {
+      await this.app.fileManager.trashFile(file);
+    }
 
+    const url = pageUrl(this.config.baseUrl, section.urlPrefix, slug);
     const deployNote = await this.triggerDeploy(converted.warnings);
     return { url, path, warnings: converted.warnings, ...(deployNote ? { deployNote } : {}) };
   }
